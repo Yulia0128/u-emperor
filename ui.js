@@ -1,5 +1,6 @@
 import { KEY, VERSION, MODES, entities, excerpt, recordFor, assignRank, removeRank, archiveKey, logAction, weightedPick, drawWeight, discordUrl, downloadUrl, dateLabel, companionLabel, makeBackup, readBackup, normalize } from './core.js';
 import { saveFile, fullBackup } from './backup.js';
+import { createId } from './ids.js';
 
 const asset = name => globalThis.__UE_PREVIEW_ASSETS__?.[name] || new URL(`./assets/${name}`, import.meta.url).href;
 const nameFace = asset('plaque-name-face.png');
@@ -39,7 +40,7 @@ export class EmperorUI {
     }
     dialog(title, { wide = false, className = '' } = {}) {
         const d = node('dialog', `ue-dialog ${wide ? 'ue-wide' : ''} ${className}`);
-        const head = node('header', 'ue-dialog-head'); const h = node('h2', '', title); h.id = `ue-title-${crypto.randomUUID()}`;
+        const head = node('header', 'ue-dialog-head'); const h = node('h2', '', title); h.id = createId('ue-title');
         const close = this.button('×', () => d.close(), 'ue-icon', '关闭');
         head.append(h, close); const body = node('div', 'ue-dialog-body');
         d.setAttribute('aria-labelledby', h.id); d.append(head, body); document.body.append(d);
@@ -127,7 +128,7 @@ export class EmperorUI {
             for (const rank of this.state.ranks) {
                 const members = filtered.filter(e => e.rank.id === rank.id).sort((a, b) => b.lastPlayed - a.lastPlayed || a.name.localeCompare(b.name, 'zh-CN'));
                 if ((query || selectedTag) && !members.length) continue;
-                const section = node('section', `ue-rank-section ${rank.id === 'cold' ? 'ue-cold' : ''}`); section.id = `ue-section-${crypto.randomUUID()}`;
+                const section = node('section', `ue-rank-section ${rank.id === 'cold' ? 'ue-cold' : ''}`); section.id = createId('ue-section');
                 const nav = this.button('', () => { rankDrawer?.close(); section.scrollIntoView({ block: 'start', behavior: 'instant' }); this.activeRank = rank.id; syncNav(); }, 'ue-nav-item'); nav.dataset.rank = rank.id;
                 nav.append(node('span', '', rank.name), node('span', 'ue-count', String(members.length))); sidebar.append(nav);
                 const heading = node('div', 'ue-section-heading'); heading.append(node('h2', '', rank.name), node('span', 'ue-count', String(members.length)));
@@ -435,7 +436,7 @@ export class EmperorUI {
                 ranks.append(row);
             });
         }; drawRanks();
-        body.append(this.button('＋ 新增妃位', () => { if (this.state.ranks.length >= 40) throw new Error('最多保留 40 个妃位。'); this.state.ranks.splice(-1, 0, { id: `rank-${crypto.randomUUID()}`, name: '新封位', weight: 1 }); this.save(); drawRanks(); this.redraw(); }), node('h3', '', '备份与恢复'), node('p', 'ue-muted', '管理备份只包含封位、登记、原帖、记录和存档别名／置顶。角色库快照另含角色 PNG、聊天 JSONL 和关联世界书，不包含账号设置或群聊。'));
+        body.append(this.button('＋ 新增妃位', () => { if (this.state.ranks.length >= 40) throw new Error('最多保留 40 个妃位。'); this.state.ranks.splice(-1, 0, { id: createId('rank'), name: '新封位', weight: 1 }); this.save(); drawRanks(); this.redraw(); }), node('h3', '', '备份与恢复'), node('p', 'ue-muted', '管理备份只包含封位、登记、原帖、记录和存档别名／置顶。角色库快照另含角色 PNG、聊天 JSONL 和关联世界书，不包含账号设置或群聊。'));
         const actions = node('div', 'ue-actions');
         actions.append(this.button('导出管理备份', () => saveFile(`U皇万岁-管理备份-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(this.state), null, 2))), this.button('导出角色库快照 ZIP', () => this.backupDialog()));
         const restore = input('', 'file'); restore.accept = '.json';
