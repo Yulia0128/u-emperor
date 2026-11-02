@@ -1,4 +1,4 @@
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.2';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -44,7 +44,7 @@ export function applyRankPreset(state, type) {
 }
 export function defaults() {
     return {
-        schema: 1, enabled: true, homepage: true, replaceCharacters: true, rankPreset: 'history',
+        schema: 1, enabled: true, homepage: false, replaceCharacters: true, rankPreset: 'history',
         ranks: [
             { id: 'queen', name: '皇后', weight: 8 },
             { id: 'imperial', name: '皇贵妃', weight: 6 },
@@ -117,7 +117,7 @@ export function normalize(input, { strict = false } = {}) {
         if (safeKey(key) && key.length < 1500 && value && typeof value === 'object') base.archives[key] = { alias: text(value.alias).slice(0, 100), pinned: value.pinned === true };
     }
     base.enabled = input.enabled !== false;
-    base.homepage = input.homepage !== false;
+    base.homepage = input.homepage === true;
     base.replaceCharacters = input.replaceCharacters !== false;
     base.rankPreset = input.rankPreset === 'empress' ? 'empress' : 'history';
     base.mode = MODES.some(([id]) => id === input.mode) ? input.mode : 'random';

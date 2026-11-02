@@ -1,5 +1,9 @@
 # 酒馆接口来源与兼容目标
 
+0.6.0 的内置人设编辑针对同一 1.15.0 源码基线：`POST /api/characters/merge-attributes` 依据 [characters.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/characters.js) 的 merge-attributes 路由，以及 script.js 的 updateRemoteChatName 调用形状。载荷以 `avatar` 指定文件，只合并用户实际改动的 description/personality/scenario/mes_example/creator_notes；同时更新 V1 对应字段与 data 中字段，作者说明的 V1 对应 creatorcomment。服务端 deepMerge 保留未提交的字段并进行原生卡验证，成功返回文本 OK。插件先读 get 检查基线，再发一次合并请求，随后 get 验证并刷新角色列表；不切换当前角色，不发送聊天保存请求。并发检查是客户端读取后核对，原生接口没有事务版本号，因此不宣称与外部同时编辑完全无竞态。单元测试覆盖未知扩展／世界书保留、聊天标识不变、文本响应、冲突及失败；模拟宿主验证 UI 到适配器完整请求。来源置信度 high，真实酒馆保存仍待验收。
+
+0.6.0 移除聊天正文预览，并停止首页和面板重绘时的整库 JSONL 下载。历史补读仅针对当前打开且缺少已记录初见时间的角色；存档页保留原生列表及消息数读取。未改变原生聊天消息或备份快照格式。首页展示默认关闭，显式保存的设置保留。
+
 0.5.0 的金字塔、横排滚动和分类完整页仅修改插件自有前端。分类页与画廊共享同一角色集合和筛选条件，当前分类、滚动位置不写入角色或聊天。carousel.js 的 DOM 监听、ResizeObserver、IntersectionObserver 与动画帧随所属界面销毁；观察器不可用时仍保留原生滚动与按钮。没有新增酒馆 API 依赖，没有调整 schema 1 管理数据与皇后／冷宫规则。测试证据仍为离线和模拟宿主，真实酒馆的原生拖动／主题叠加／手机触摸需在目标环境验收。
 
 0.4.0 的事件隔离依据同一 1.15.0 提交的 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) 文档 click 处理器，以及 [RossAscends-mods.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/RossAscends-mods.js) 的 Escape 处理器。原生把不在 `.openDrawer` 内且非原生 popup 的点击视作面板外部点击；插件弹窗在 body 的独立层，因此只在插件自有根节点与 dialog 内停止 click 冒泡，Escape 也仅在自有界面内隔离，保留浏览器关闭当前 dialog 的默认行为。没有改写原生监听器或用户固定面板偏好。旧版在带该关闭逻辑的模拟宿主中可复现，新版验证同一路径通过；真实用户酒馆仍待验收。

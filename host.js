@@ -12,13 +12,14 @@ export class TavernHost {
         this.historyValue = new Map(); this.historyJobs = new Map(); this.historyQueue = []; this.historyActive = 0;
     }
     get ctx() { return this.context(); }
-    async request(path, body, { blob = false, form = false, allowError = false } = {}) {
+    async request(path, body, { blob = false, form = false, allowError = false, textResponse = false } = {}) {
         const response = await fetch(path, {
             method: 'POST', headers: this.ctx.getRequestHeaders({ omitContentType: form }),
             body: form ? body : JSON.stringify(body), cache: 'no-store',
         });
         if (!response.ok) throw new Error(`酒馆请求失败（${response.status}），请稍后重试。`);
         if (blob) return response.blob();
+        if (textResponse) return response.text();
         const result = await response.json();
         if (result?.error && !allowError) throw new Error('酒馆未能完成操作，请检查文件或重试。');
         return result;
@@ -212,6 +213,23 @@ export class TavernHost {
         return this.importFile(new File([await response.blob()], filename, { type: response.headers.get('Content-Type') || 'image/png' }), avatar);
     }
     async editCharacter(avatar) { return this.exclusive(() => this.select(avatar, true)); }
+    async updateProfile(avatar, changes, baseline) {
+        return this.exclusive(async () => {
+            const allowed = ['description', 'personality', 'scenario', 'mes_example', 'creator_notes'];
+            const fields = Object.keys(changes);
+            if (fields.some(field => !allowed.includes(field) || typeof changes[field] !== 'string')) throw new Error('人设字段无效，未保存。');
+            const read = (raw, field) => raw.data?.[field] ?? (field === 'creator_notes' ? raw.creatorcomment : raw[field]) ?? '';
+            const before = await this.request('/api/characters/get', { avatar_url: avatar });
+            if (before.avatar !== avatar) throw new Error('角色标识已变化，请重新打开档案。');
+            for (const field of fields) if (read(before, field) !== baseline[field] && read(before, field) !== changes[field]) throw new Error('原生资料已被修改，请重新打开编辑器后再保存。你的输入仍保留在这里。');
+            const patch = { avatar, data: {} };
+            for (const field of fields) { patch.data[field] = changes[field]; patch[field === 'creator_notes' ? 'creatorcomment' : field] = changes[field]; }
+            if (fields.length) await this.request('/api/characters/merge-attributes', patch, { textResponse: true });
+            const verified = await this.request('/api/characters/get', { avatar_url: avatar });
+            if (verified.avatar !== avatar || fields.some(field => read(verified, field) !== changes[field])) throw new Error('保存结果尚未确认，请重新读取原生角色资料检查。输入仍保留。');
+            await this.ctx.getCharacters(); this.invalidate(); return verified;
+        });
+    }
     async createCharacter() {
         await this.assertIdle();
         // Deliberate native UI entry: 1.15.0 public/script.js, #rm_button_create click binding.

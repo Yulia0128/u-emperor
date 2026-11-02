@@ -71,7 +71,7 @@ export class EmperorUI {
         return { dialog: d, body };
     }
     closeAll() { for (const d of [...this.dialogs].reverse()) d.close(); }
-    async all({ statsRequired = false } = {}) {
+    async all({ statsRequired = false, historyAvatar = '' } = {}) {
         let stats = {};
         try { stats = await this.host.stats(); }
         catch (e) { if (statsRequired) throw new Error(`旧情复燃需要历史聊天统计：${e.message}`); stats = this.host.statsValue || {}; }
@@ -79,9 +79,11 @@ export class EmperorUI {
         for (const entity of all) {
             const history = this.host.historyValue?.get(entity.id);
             entity.played ||= history?.played === true;
-            entity.historyPending = !!this.host.history && !history;
+            const needsHistory = entity.id === historyAvatar && !entity.record.firstPlayedAt;
+            entity.historyPending = needsHistory && !!this.host.history && !history;
             entity.historyUnavailable = history?.complete === false;
-            if (!this.host.history) continue;
+            // No library-wide JSONL downloads just to open or redraw the manager.
+            if (!this.host.history || !needsHistory) continue;
             const job = this.host.history(entity.id);
             if (this.historyJobs.get(entity.id) === job) continue;
             this.historyJobs.set(entity.id, job);
@@ -133,8 +135,7 @@ export class EmperorUI {
         const content = node('div', 'ue-card-copy');
         content.append(node('h3', '', entity.name), node('p', 'ue-card-meta', this.companion(entity)));
         const actions = node('div', 'ue-card-actions');
-        actions.append(this.button('▷', () => this.continue(entity), 'ue-icon ue-primary', `继续 ${entity.name} 的上次聊天`));
-        actions.append(this.button('···', () => this.detail(entity.id), 'ue-icon', `${entity.name} 的档案与存档`));
+        actions.append(this.button('▷', () => this.continue(entity), 'ue-icon ue-primary ue-card-play', `继续 ${entity.name} 的上次聊天`));
         card.append(open, content, actions); return card;
     }
     shell({ home = false, native = false } = {}) {
@@ -194,7 +195,7 @@ export class EmperorUI {
                 const section = node('section', `ue-rank-section ${viewRank === 'all' ? 'ue-gallery-tier' : 'ue-category-view'} ${rank.id === 'cold' ? 'ue-cold' : ''}`);
                 section.dataset.rank = rank.id; this.rankStyle(section, rank.id);
                 const heading = node('div', 'ue-section-heading'); const title = node('h2');
-                if (viewRank === 'all') title.append(this.button(rank.name, () => navigate(rank.id), 'ue-rank-entry', `查看${rank.name}全部角色`));
+                if (viewRank === 'all') { const entry = this.button(rank.name, () => navigate(rank.id), 'ue-rank-entry', `查看${rank.name}全部角色`); entry.removeAttribute('title'); title.append(entry); }
                 else { title.textContent = rank.name; title.className = 'ue-category-title'; title.tabIndex = -1; }
                 heading.append(title, node('span', 'ue-count', String(members.length)));
                 if (rank.id === 'cold') heading.append(node('small', 'ue-muted', '不参与随机翻牌'));
@@ -238,14 +239,14 @@ export class EmperorUI {
         const shell = this.shell(); body.append(shell.root); dialog.addEventListener('close', shell.dispose, { once: true });
     }
     async detail(avatar) {
-        const all = await this.all(); let entity = all.find(e => e.id === avatar);
+        const all = await this.all({ historyAvatar: avatar }); let entity = all.find(e => e.id === avatar);
         if (!entity) throw new Error('角色已不存在，请刷新。');
         logAction(this.state, avatar, 'view'); this.save();
         const { dialog, body } = this.dialog(entity.name, { wide: true, className: 'ue-detail' });
         const top = node('div', 'ue-detail-summary'); top.append(this.cover(entity));
         const intro = node('div'); const companion = node('p', '', this.companion(entity)); const entered = node('p', 'ue-muted', `入宫于 ${dateLabel(entity.record.enteredAt)}`);
         intro.append(node('span', 'ue-badge', entity.rank.name), companion, entered);
-        const historyJob = this.host.history?.(avatar);
+        const historyJob = this.host.historyJobs?.get(avatar);
         historyJob?.then(async () => { if (!dialog.open) return; const latest = (await this.all()).find(e => e.id === avatar); if (latest && dialog.open) { companion.textContent = this.companion(latest); entered.textContent = `入宫于 ${dateLabel(latest.record.enteredAt)}`; } }).catch(() => {});
         const actions = node('div', 'ue-actions'); actions.append(this.button('▷ 继续上次', () => this.continue(entity), 'ue-primary'), this.button('开启新故事', () => this.fresh(entity)));
         intro.append(actions); top.append(intro); body.append(top);
@@ -271,12 +272,35 @@ export class EmperorUI {
     profile(panel, entity) {
         const raw = entity.raw.data || entity.raw;
         const tools = node('div', 'ue-actions');
-        tools.append(this.button('册封／入宫登记', () => this.registration(entity.id)), this.button('更新／替换角色卡', () => this.replacement(entity)), this.button('原生编辑', async () => { this.onNativeEntry?.(); await this.host.editCharacter(entity.id); this.closeAll(); }));
-        if (entity.record.sourceUrl) tools.append(this.link('查看原帖 ↗', entity.record.sourceUrl));
+        tools.append(this.button('册封／入宫登记', () => this.registration(entity.id)), this.button('更新／替换角色卡', () => this.replacement(entity)), this.button('编辑人设', () => this.profileEditor(entity, () => { panel.replaceChildren(); this.profile(panel, entity); })), this.button('跳转原帖 ↗', () => this.sourceThread(entity)));
         panel.append(tools);
         const info = [['人设', raw.description || entity.raw.description], ['性格', raw.personality], ['场景', raw.scenario], ['作者说明', raw.creator_notes || entity.raw.creatorcomment], ['示例对话', raw.mes_example]];
         if (raw.creator || raw.character_version) panel.append(node('p', 'ue-muted', [raw.creator && `作者：${raw.creator}`, raw.character_version && `版本：${raw.character_version}`].filter(Boolean).join(' · ')));
-        for (const [label, value] of info) if (typeof value === 'string' && value.trim()) { const section = node('details', 'ue-text-section'); if (label === '人设') section.open = true; section.append(node('summary', '', label), node('pre', 'ue-prose', value)); panel.append(section); }
+        for (const [label, value] of info) if (typeof value === 'string' && value.trim()) { const section = node('details', 'ue-text-section'); section.append(node('summary', '', label), node('pre', 'ue-prose', value)); panel.append(section); }
+    }
+    profileEditor(entity, afterSave) {
+        const { dialog, body } = this.dialog('编辑人设', { wide: true, className: 'ue-profile-editor' });
+        const fields = [['description', '人设'], ['personality', '性格'], ['scenario', '场景'], ['mes_example', '示例对话'], ['creator_notes', '作者说明']];
+        const baseline = {}, controls = new Map();
+        for (const [key, label] of fields) {
+            const value = entity.raw.data?.[key] ?? (key === 'creator_notes' ? entity.raw.creatorcomment : entity.raw[key]) ?? '';
+            baseline[key] = String(value); const control = node('textarea', 'ue-input ue-profile-text'); control.value = baseline[key]; control.rows = key === 'description' ? 10 : 5;
+            controls.set(key, control); body.append(field(label, control));
+        }
+        const actions = node('div', 'ue-actions');
+        actions.append(this.button('保存人设', async () => {
+            const changes = Object.fromEntries([...controls].filter(([key, control]) => control.value !== baseline[key]).map(([key, control]) => [key, control.value]));
+            entity.raw = await this.host.updateProfile(entity.id, changes, baseline); dialog.close(); afterSave(); await this.redraw(); this.notify('已保存到原生角色卡。');
+        }, 'ue-primary'), this.button('取消', () => dialog.close())); body.append(actions);
+    }
+    sourceThread(entity) {
+        const current = recordFor(this.state, entity.id);
+        if (current.sourceUrl) { window.open(discordUrl(current.sourceUrl), '_blank', 'noopener,noreferrer'); return; }
+        const { dialog, body } = this.dialog('保存原帖链接'); const url = input('', 'url'); url.placeholder = 'https://discord.com/channels/…';
+        body.append(field('Discord 原帖链接', url), this.button('保存并跳转', () => {
+            const valid = discordUrl(url.value); if (!valid) throw new Error('请填写 Discord 原帖链接。');
+            current.sourceUrl = valid; this.save(); window.open(valid, '_blank', 'noopener,noreferrer'); dialog.close();
+        }, 'ue-primary'));
     }
     link(label, url) { const a = node('a', 'ue-button', label); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
     greetings(panel, entity) {
@@ -287,7 +311,7 @@ export class EmperorUI {
         if (!greetings.length) panel.append(node('p', 'ue-empty', '这张角色卡尚未设置开场白。'));
         panel.append(node('p', 'ue-muted', '预览为纯文本，不执行卡内脚本。选择开场会建立一份新存档。'));
         greetings.forEach(({ g, index }, i) => {
-            const detail = node('details', 'ue-text-section'); detail.open = i === 0;
+            const detail = node('details', 'ue-text-section');
             detail.append(node('summary', '', `开场 ${i + 1} · ${excerpt(g, 50)}`), node('pre', 'ue-prose', g), this.button('用此开场开启新故事', () => this.fresh(entity, index), 'ue-primary')); panel.append(detail);
         });
     }
@@ -296,18 +320,13 @@ export class EmperorUI {
         if (!current()) return;
         if (!names.length) panel.append(node('p', 'ue-muted', '尚未关联独立世界书。'));
         for (const name of names) {
-            const row = node('div', 'ue-save'); row.append(node('strong', '', name), this.button('查看', async () => {
+            const row = node('div', 'ue-save ue-world-row'); const actions = node('div', 'ue-world-actions'); actions.append(this.button('查看', async () => {
                 const data = await this.host.readWorld(name);
                 const { body } = this.dialog(name, { wide: true });
                 const entries = Object.values(data.entries || {});
                 if (!entries.length) body.append(node('p', 'ue-muted', '世界书暂无条目。'));
                 for (const entry of entries) { const d = node('details', 'ue-text-section'); d.append(node('summary', '', entry.comment || (Array.isArray(entry.key) ? entry.key.join('、') : '') || '未命名条目'), node('pre', 'ue-prose', String(entry.content || ''))); body.append(d); }
-            }), this.button('原生编辑', async () => { this.closeAll(); await this.host.openWorld(name); })); panel.append(row);
-        }
-        const embedded = entity.raw.data?.character_book;
-        if (embedded) {
-            const details = node('details', 'ue-text-section'); details.append(node('summary', '', '卡内嵌入世界书'), node('p', 'ue-muted', '这里显示角色卡内的副本，可能与酒馆中已导入的世界书不同。'));
-            for (const entry of Object.values(embedded.entries || {})) { const d = node('details'); d.append(node('summary', '', entry.comment || '条目'), node('pre', 'ue-prose', String(entry.content || ''))); details.append(d); } panel.append(details);
+            }), this.button('原生编辑', async () => { this.closeAll(); await this.host.openWorld(name); })); row.append(node('strong', '', name), actions); panel.append(row);
         }
     }
     async archives(panel, entity, current) {
@@ -330,15 +349,10 @@ export class EmperorUI {
                 const key = archiveKey(entity.id, row.name); const meta = this.state.archives[key] || {};
                 const item = node('article', 'ue-save'); const open = this.button('', () => this.continue(entity, row.name), 'ue-save-open');
                 open.append(node('strong', '', `${meta.pinned ? '⌖ ' : ''}${meta.alias || row.name}`), node('small', 'ue-muted', `${row.messages === null ? '消息数待读取' : `${row.messages} 条消息`} · ${dateTime(row.date)}`));
-                if (row.preview) open.append(node('span', 'ue-save-excerpt', row.preview));
                 const actions = node('div', 'ue-save-actions');
                 actions.append(this.button(meta.pinned ? '取消置顶' : '置顶', () => { this.state.archives[key] = { ...meta, pinned: !meta.pinned }; this.save(); render(); }), this.button('改名', () => {
                     const { dialog, body } = this.dialog('存档显示名'); const name = input(meta.alias || row.name); name.maxLength = 100;
                     body.append(field('名称', name, '只修改这里的显示名，原生文件名保留。'), this.button('保存', () => { this.state.archives[key] = { ...meta, alias: name.value.trim() }; this.save(); dialog.close(); render(); }, 'ue-primary'));
-                }), this.button('预览', async () => {
-                    const messages = await this.host.readChat(entity.id, row.name); const { body } = this.dialog(meta.alias || row.name, { wide: true });
-                    body.append(node('p', 'ue-muted', '只读取现有消息，不调用模型；显示最近 80 条纯文本。'));
-                    messages.filter(m => typeof m.mes === 'string').slice(-80).forEach(m => { const section = node('section', 'ue-message'); section.append(node('strong', '', m.name || (m.is_user ? '你' : entity.name)), node('pre', 'ue-prose', m.mes)); body.append(section); });
                 }), this.button('删除', () => this.confirmDelete(entity, row, async () => { const i = rows.findIndex(r => r.name === row.name); if (i >= 0) rows.splice(i, 1); details = details.filter(r => r.name !== row.name); render(); }), 'ue-danger'));
                 item.append(open, actions); list.append(item);
             }
@@ -365,7 +379,7 @@ export class EmperorUI {
         const demotionField = field(`原${queenName}的新封位`, demotion, `册封时同时完成交接，${queenName}始终最多一位。`);
         const sync = () => { demotionField.hidden = rank.value !== 'queen' || !incumbent; }; rank.addEventListener('change', sync); sync();
         const tags = input(entity.tags.join('、')); tags.readOnly = true;
-        body.append(node('p', '', entity.name), field('妃位', rank), demotionField, field('Discord 原帖（可不填）', source), field('现有标签', tags, '标签沿用酒馆原生设置，可从档案的「原生编辑」管理。'));
+        body.append(node('p', '', entity.name), field('妃位', rank), demotionField, field('Discord 原帖（可不填）', source), field('现有标签', tags, '标签沿用酒馆原生设置，可在原生角色面板管理。'));
         body.append(this.button('完成登记', async () => { const url = discordUrl(source.value); assignRank(this.state, avatar, rank.value, demotion.value); record.sourceUrl = url; this.save(); dialog.close(); await this.redraw(); this.notify('入宫登记已保存。'); }, 'ue-primary'), this.button('稍后再说', () => dialog.close()));
     }
     importDialog() {
@@ -395,17 +409,23 @@ export class EmperorUI {
     }
     replacement(entity) {
         const { dialog, body } = this.dialog('更新／替换角色卡');
-        body.append(node('p', '', entity.name), node('p', 'ue-muted', '保留角色标识、封位、原帖和现有聊天；覆盖角色资料中的本地修改。'));
-        const mode = select([['file', '本地文件'], ['url', '下载网址']], 'file'); const file = input('', 'file'); file.accept = '.png,.json,.charx,.yaml,.yml,.byaf';
-        const url = input('', 'url'); url.placeholder = '角色卡下载直链或酒馆支持的角色站网址';
-        const jump = this.button('打开网址 ↗', () => { window.open(downloadUrl(url.value), '_blank', 'noopener,noreferrer'); });
-        const fileField = field('新角色卡', file); const urlField = field('下载网址', url, 'Discord 原帖仅用于跳转，不能作为下载地址。'); urlField.append(jump);
-        const sync = () => { fileField.hidden = mode.value !== 'file'; urlField.hidden = mode.value !== 'url'; }; mode.addEventListener('change', sync); sync();
-        body.append(field('更新方式', mode), fileField, urlField, this.button('确认替换', async () => {
-            if (mode.value === 'file') { if (!file.files[0]) throw new Error('请先选择文件。'); await this.host.importFile(file.files[0], entity.id); }
-            else await this.host.importUrl(url.value, entity.id);
-            this.save(); dialog.close(); await this.redraw(); this.notify('角色卡已替换，重新打开档案可查看新资料。');
-        }, 'ue-primary'));
+        const heading = node('div', 'ue-replacement-row'); heading.append(node('span', '', entity.name));
+        const file = input('', 'file'); file.accept = '.png,.json,.charx,.yaml,.yml,.byaf'; file.hidden = true;
+        const status = node('p', 'ue-muted'); status.setAttribute('role', 'status');
+        let busy = false;
+        const perform = async operation => {
+            if (busy) throw new Error('正在替换，请稍候。'); busy = true; fromFile.disabled = fromUrl.disabled = true; status.textContent = '正在替换…';
+            try { await operation(); this.save(); dialog.close(); await this.redraw(); this.notify('角色卡已替换，现有聊天和登记保留。'); }
+            finally { busy = false; fromFile.disabled = fromUrl.disabled = false; file.value = ''; }
+        };
+        const fromFile = this.button('文件导入', () => file.click());
+        const fromUrl = this.button('URL 导入', () => {
+            const opened = this.dialog('从 URL 替换角色卡'); const url = input('', 'url'); url.placeholder = '角色卡下载网址';
+            opened.body.append(field('下载网址', url), this.button('确认替换', async () => { const valid = downloadUrl(url.value); await perform(() => this.host.importUrl(valid, entity.id)); opened.dialog.close(); }, 'ue-primary'));
+        });
+        file.addEventListener('change', async () => { const selected = file.files[0]; if (!selected) return; try { await perform(() => this.host.importFile(selected, entity.id)); } catch (error) { status.textContent = error.message; this.notify(error.message, true); } });
+        const row = node('div', 'ue-replacement-row'); const actions = node('div', 'ue-world-actions'); actions.append(fromFile, fromUrl); row.append(node('span', '', '更新角色卡'), actions);
+        body.append(heading, node('p', 'ue-muted', '保留角色标识、封位、原帖和现有聊天；覆盖角色资料中的本地修改。'), row, file, status);
     }
     async drawDialog() {
         const { dialog, body } = this.dialog('今夜翻谁', { wide: true, className: 'ue-draw-dialog' });
@@ -427,12 +447,30 @@ export class EmperorUI {
         tray.addEventListener('error', () => { stage.dataset.assetError = 'true'; status.textContent = '托盘素材未能加载，请重新打开新版预览或刷新页面。'; status.hidden = false; });
         tray.addEventListener('load', () => { delete stage.dataset.assetError; });
         const next = this.button('重新摆牌', () => deal(), 'ue-draw-again'); next.hidden = true;
-        body.append(status, stage, result, next); result.hidden = true;
+        const outcome = node('div', 'ue-draw-outcome'); outcome.setAttribute('role', 'region'); outcome.setAttribute('aria-label', '翻牌结果与选择'); outcome.hidden = true;
+        outcome.append(result, next); body.append(status, stage, outcome); result.hidden = true;
         let all = [], pool = [], revision = 0;
         let savedTag = this.state.drawTag;
+        const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const fadeOut = (element, duration) => new Promise(resolve => {
+            let timer;
+            const finish = event => {
+                if (event && (event.target !== element || event.animationName !== 'ue-soft-disappear')) return;
+                clearTimeout(timer); element.removeEventListener('animationend', finish); element.removeEventListener('animationcancel', finish); resolve();
+            };
+            element.addEventListener('animationend', finish); element.addEventListener('animationcancel', finish);
+            element.dataset.phase = 'leaving'; timer = setTimeout(finish, duration + 100);
+        });
         const filtered = () => all.filter(e => e.rank.id !== 'cold' && (!tag.value || e.tags.includes(tag.value)) && (!rank.value || e.rank.id === rank.value) && drawWeight(e, mode.value) > 0);
         const deal = async () => {
-            const id = ++revision; result.replaceChildren(); result.hidden = true; next.hidden = true; status.hidden = true; plaques.replaceChildren();
+            const id = ++revision;
+            if (plaques.childElementCount && !reducedMotion()) {
+                plaques.querySelectorAll('button').forEach(button => { button.disabled = true; });
+                await Promise.all([fadeOut(plaques, 220), ...(!outcome.hidden ? [fadeOut(outcome, 220)] : [])]);
+                if (!dialog.open || id !== revision) return;
+            }
+            result.replaceChildren(); result.hidden = true; next.hidden = true; outcome.hidden = true; outcome.scrollTop = 0; status.hidden = true; plaques.replaceChildren();
+            delete outcome.dataset.phase; delete plaques.dataset.phase;
             description.textContent = '正在准备牌签…';
             try {
                 all = await this.all({ statsRequired: mode.value === 'rekindle' });
@@ -454,7 +492,8 @@ export class EmperorUI {
                     for (let i = dealt.length; i < 5; i++) { const empty = this.plaque(null, '当前没有更多点名候选', () => {}); empty.disabled = true; empty.dataset.empty = 'true'; plaques.append(empty); }
                     description.append(node('span', '', ' 点名时按此规则摆出候选，由你亲自选择。'));
                 }
-            } catch (e) { if (dialog.open && id === revision) { description.textContent = e.message; status.textContent = e.message; status.hidden = false; stage.hidden = true; next.hidden = false; next.textContent = '重新准备'; } }
+                plaques.dataset.phase = 'entering';
+            } catch (e) { if (dialog.open && id === revision) { description.textContent = e.message; status.textContent = e.message; status.hidden = false; stage.hidden = true; outcome.hidden = false; next.hidden = false; next.textContent = '重新准备'; } }
         };
         const reveal = async (entity, button) => {
             if (!entity || button.dataset.revealed === 'true') return;
@@ -470,16 +509,19 @@ export class EmperorUI {
             button.setAttribute('aria-label', `翻到了 ${entity.name}`);
             logAction(this.state, entity.id, 'flip'); this.save();
             const inner = button.querySelector('.ue-plaque-inner');
-            const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const reduced = reducedMotion();
             await new Promise(resolve => requestAnimationFrame(resolve));
             inner.classList.add('ue-is-flipped');
             if (!reduced) await new Promise(resolve => {
                 let timer;
-                const finish = () => { clearTimeout(timer); inner.removeEventListener('transitionend', finish); resolve(); };
-                inner.addEventListener('transitionend', finish); timer = setTimeout(finish, 750);
+                const finish = event => {
+                    if (event && (event.target !== inner || event.propertyName !== 'transform')) return;
+                    clearTimeout(timer); inner.removeEventListener('transitionend', finish); inner.removeEventListener('transitioncancel', finish); resolve();
+                };
+                inner.addEventListener('transitionend', finish); inner.addEventListener('transitioncancel', finish); timer = setTimeout(finish, 1100);
             });
             if (!dialog.open || id !== revision) return;
-            result.hidden = false; next.hidden = false;
+            outcome.hidden = false; outcome.scrollTop = 0; result.hidden = false; next.hidden = false;
             result.replaceChildren(node('span', 'ue-badge', entity.rank.name), node('h3', '', entity.name), node('p', 'ue-muted', this.companion(entity)));
             const actions = node('div', 'ue-actions'); actions.append(this.button('▷ 继续上次', () => this.continue(entity), 'ue-primary'), this.button('选择存档', async () => { await this.detail(entity.id); const d = [...this.dialogs].at(-1); [...d.querySelectorAll('.ue-tabs button')].find(b => b.textContent === '存档')?.click(); }), this.button('开启新故事', () => this.fresh(entity)), this.button('查看档案', () => this.detail(entity.id))); result.append(actions);
         };
@@ -497,35 +539,35 @@ export class EmperorUI {
         return button;
     }
     settings() {
-        const { dialog, body } = this.dialog('设置与备份', { wide: true });
+        const { dialog, body } = this.dialog('设置与备份', { wide: true, className: 'ue-settings-dialog' });
         const home = input('', 'checkbox'); home.checked = this.state.homepage;
         home.addEventListener('change', () => { this.state.homepage = home.checked; this.save(); this.onHomePreference?.(); });
         const replace = input('', 'checkbox'); replace.checked = this.state.replaceCharacters;
         replace.addEventListener('change', () => { this.state.replaceCharacters = replace.checked; this.save(); this.onPanelPreference?.(); });
-        body.append(field('在酒馆原生首页展示管理器', home), field('替代右上角原生角色面板', replace, '原生编辑和创建仍可使用；关闭此项立即恢复原生角色界面。'), node('h3', '', '妃位管理'), node('p', 'ue-muted', '最高封位最多一位；冷宫始终不参与随机。名字可修改，规则随分类保留。'));
+        for (const [label, control] of [['在酒馆原生首页展示管理器', home], ['替代右上角原生角色面板', replace]]) {
+            const row = node('label', 'ue-check-row'); control.setAttribute('aria-label', label); row.append(control, node('span', '', label)); body.append(row);
+        }
         const preset = select([['history', '历史'], ['empress', '女帝']], this.state.rankPreset);
         preset.addEventListener('change', () => {
             try { applyRankPreset(this.state, preset.value); this.save(); drawRanks(); this.redraw(); }
             catch (error) { preset.value = this.state.rankPreset; this.notify(error.message, true); }
         });
-        body.append(field('默认分类类型', preset, '历史：皇后、皇贵妃…；女帝：帝后、皇贵君、贵君、文君、侧君、贵卿、侍君。切换保留册封、权重及手动改名。'));
+        preset.setAttribute('aria-label', '默认分类类型');
+        const classification = node('div', 'ue-classification-head'); classification.append(node('h3', '', '分类管理'), preset); body.append(classification);
         const ranks = node('div', 'ue-rank-editor'); body.append(ranks);
         const drawRanks = () => {
             ranks.replaceChildren();
-            this.state.ranks.forEach((r, i) => {
+            this.state.ranks.forEach(r => {
                 const row = node('div', 'ue-rank-edit-row'); const name = input(r.name); name.maxLength = 30; name.setAttribute('aria-label', `${r.name}的名称`);
                 const weight = input(r.weight, 'number'); weight.min = '0.1'; weight.max = '100'; weight.step = '0.1'; weight.disabled = r.id === 'cold'; weight.setAttribute('aria-label', `${r.name}的抽取权重`);
-                row.append(name, weight, this.button('保存', () => { if (!name.value.trim()) throw new Error('妃位名不能为空。'); if (r.id !== 'cold' && (!Number.isFinite(+weight.value) || +weight.value < 0.1 || +weight.value > 100)) throw new Error('权重需在 0.1–100 之间。'); r.name = name.value.trim(); r.weight = r.id === 'cold' ? 0 : +weight.value; this.save(); this.redraw(); this.notify('妃位已保存。'); }), this.button('↑', () => {
-                    if (i <= 1 || r.id === 'cold') return;
-                    [this.state.ranks[i - 1], this.state.ranks[i]] = [this.state.ranks[i], this.state.ranks[i - 1]]; this.save(); drawRanks(); this.redraw();
-                }, 'ue-icon', `上移${r.name}`));
-                if (!['queen', 'cold', 'unranked'].includes(r.id)) row.append(this.button('删除', () => {
-                    const confirm = this.dialog('删除这个妃位？'); confirm.body.append(node('p', '', `原属「${r.name}」的角色将移到未册封，角色和聊天保留。`), this.button('确认删除', () => { removeRank(this.state, r.id); this.save(); confirm.dialog.close(); drawRanks(); this.redraw(); }, 'ue-danger'));
-                }, 'ue-danger'));
+                row.append(name, weight, this.button('保存', () => { if (!name.value.trim()) throw new Error('分类名不能为空。'); if (r.id !== 'cold' && (!Number.isFinite(+weight.value) || +weight.value < 0.1 || +weight.value > 100)) throw new Error('权重需在 0.1–100 之间。'); r.name = name.value.trim(); r.weight = r.id === 'cold' ? 0 : +weight.value; this.save(); this.redraw(); this.notify('分类已保存。'); }));
+                const remove = this.button('删除', () => {
+                    const confirm = this.dialog('删除这个分类？'); confirm.body.append(node('p', '', `原属「${r.name}」的角色将移到未册封，角色和聊天保留。`), this.button('确认删除', () => { removeRank(this.state, r.id); this.save(); confirm.dialog.close(); drawRanks(); this.redraw(); }, 'ue-danger'));
+                }, 'ue-danger'); remove.disabled = ['queen', 'cold', 'unranked'].includes(r.id); row.append(remove);
                 ranks.append(row);
             });
         }; drawRanks();
-        body.append(this.button('＋ 新增妃位', () => { if (this.state.ranks.length >= 40) throw new Error('最多保留 40 个妃位。'); this.state.ranks.splice(-1, 0, { id: createId('rank'), name: '新封位', weight: 1 }); this.save(); drawRanks(); this.redraw(); }), node('h3', '', '备份与恢复'), node('p', 'ue-muted', '管理备份只包含封位、登记、原帖、记录和存档别名／置顶。角色库快照另含角色 PNG、聊天 JSONL 和关联世界书，不包含账号设置或群聊。'));
+        body.append(this.button('＋ 新增分类', () => { if (this.state.ranks.length >= 40) throw new Error('最多保留 40 个分类。'); this.state.ranks.splice(-1, 0, { id: createId('rank'), name: '新封位', weight: 1 }); this.save(); drawRanks(); this.redraw(); }), node('h3', '', '备份与恢复'), node('p', 'ue-muted', '管理备份只包含封位、登记、原帖、记录和存档别名／置顶。角色库快照另含角色 PNG、聊天 JSONL 和关联世界书，不包含账号设置或群聊。'));
         const actions = node('div', 'ue-actions');
         actions.append(this.button('导出管理备份', () => saveFile(`U皇万岁-管理备份-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(this.state), null, 2))), this.button('导出角色库快照 ZIP', () => this.backupDialog()));
         const restore = input('', 'file'); restore.accept = '.json';
