@@ -1,4 +1,4 @@
-import { chatRows, downloadUrl, stem, timestamp } from './core.js';
+import { chatRows, downloadUrl, stem, timestamp, interactionDates } from './core.js';
 
 /** Native adapter. Every version-sensitive dependency is pinned in docs/COMPATIBILITY.md. */
 export class TavernHost {
@@ -9,6 +9,7 @@ export class TavernHost {
         this.world = loaders.world || (() => import('/scripts/world-info.js'));
         this.statsValue = {}; this.statsTime = 0; this.pendingStats = null;
         this.serial = false;
+        this.historyValue = new Map(); this.historyJobs = new Map(); this.historyQueue = []; this.historyActive = 0;
     }
     get ctx() { return this.context(); }
     async request(path, body, { blob = false, form = false, allowError = false } = {}) {
@@ -32,6 +33,39 @@ export class TavernHost {
         }).finally(() => { this.pendingStats = null; });
         return this.pendingStats;
     }
+    history(avatar) {
+        if (this.historyJobs.has(avatar)) return this.historyJobs.get(avatar);
+        const jobs = this.historyJobs;
+        const promise = new Promise((resolve, reject) => {
+            this.historyQueue.push(async () => {
+                if (this.disposed) { resolve({ first: 0, last: 0, played: false, complete: false }); return; }
+                try {
+                    const dates = { first: 0, last: 0, played: false, complete: true };
+                    const rows = await this.listChats(avatar);
+                    // Sequential archive reads, with at most two characters loading at once.
+                    for (const row of rows) {
+                        if (this.disposed) { dates.complete = false; break; }
+                        try {
+                            const current = interactionDates(await this.readChat(avatar, row.name));
+                            dates.played ||= current.played;
+                            if (current.first) dates.first = dates.first ? Math.min(dates.first, current.first) : current.first;
+                            dates.last = Math.max(dates.last, current.last);
+                        } catch { dates.complete = false; }
+                    }
+                    if (jobs === this.historyJobs) this.historyValue.set(avatar, dates);
+                    resolve(dates);
+                } catch (error) { if (jobs === this.historyJobs) this.historyValue.set(avatar, { first: 0, last: 0, played: false, complete: false }); reject(error); }
+            });
+        });
+        jobs.set(avatar, promise); this.drainHistory(); return promise;
+    }
+    drainHistory() {
+        while (this.historyActive < 2 && this.historyQueue.length) {
+            const task = this.historyQueue.shift(); this.historyActive++;
+            task().finally(() => { this.historyActive--; this.drainHistory(); });
+        }
+    }
+    dispose() { this.disposed = true; }
     find(avatar) {
         const index = (this.ctx.characters || []).findIndex(c => c.avatar === avatar);
         if (index < 0) throw new Error('角色已不存在，请刷新列表。');
@@ -198,7 +232,7 @@ export class TavernHost {
     }
     async exportCard(avatar) { return this.request('/api/characters/export', { avatar_url: avatar, format: 'png' }, { blob: true }); }
     async readWorld(name) { const wi = await this.world(); const data = await wi.loadWorldInfo(name); if (!data) throw new Error(`世界书 ${name} 读取失败。`); return data; }
-    async refresh() { await this.ctx.getCharacters(); this.invalidate(); }
+    async refresh() { await this.ctx.getCharacters(); this.invalidate(); this.historyJobs = new Map(); this.historyValue.clear(); }
     off(event, fn) { const source = this.ctx.eventSource; if (source.removeListener) source.removeListener(event, fn); else source.off(event, fn); }
     on(name, fn) {
         const event = this.ctx.eventTypes[name];

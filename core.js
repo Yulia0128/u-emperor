@@ -1,4 +1,4 @@
-export const VERSION = '0.3.1';
+export const VERSION = '0.4.1';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -17,14 +17,34 @@ export function timestamp(v) {
     if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : 0;
     if (!v) return 0;
     if (/^\d{13}$/.test(String(v))) return Number(v);
-    const direct = Date.parse(v);
+    // Native historical exports also contain spaced humanized dates and 12h dates.
+    const human = String(v).match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s*[@ ]\s*(\d{1,2})h\s*(\d{1,2})m\s*(\d{1,2})s(?:\s*(\d{1,3})ms)?$/);
+    if (human) return Date.UTC(+human[1], +human[2] - 1, +human[3], +human[4], +human[5], +human[6], +(human[7] || '0').padStart(3, '0'));
+    const meridiem = String(v).replace(/(\d)(am|pm)$/i, '$1 $2');
+    const direct = Date.parse(meridiem);
     if (Number.isFinite(direct)) return direct;
     const m = String(v).match(/(\d{4})-(\d{2})-(\d{2})[@ T](\d{2})[h:](\d{2})(?:[m:](\d{2}))?/);
     return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime() : 0;
 }
+export const RANK_PRESETS = Object.freeze({
+    history: { queen: '皇后', imperial: '皇贵妃', noble: '贵妃', consort: '妃', concubine: '嫔', lady: '贵人', attendant: '常在' },
+    empress: { queen: '帝后', imperial: '皇贵君', noble: '贵君', consort: '文君', concubine: '侧君', lady: '贵卿', attendant: '侍君' },
+});
+export function applyRankPreset(state, type) {
+    if (!Object.hasOwn(RANK_PRESETS, type)) throw new Error('未知的默认分类类型。');
+    if (type === 'empress' && !state.ranks.some(r => r.id === 'attendant')) {
+        if (state.ranks.length >= 40) throw new Error('妃位已达上限，请先腾出一个位置以添加侍君。');
+        const unranked = state.ranks.findIndex(r => r.id === 'unranked');
+        state.ranks.splice(unranked, 0, { id: 'attendant', name: RANK_PRESETS.empress.attendant, weight: 0.75 });
+    }
+    for (const rank of state.ranks) {
+        if (Object.values(RANK_PRESETS).some(preset => preset[rank.id] === rank.name)) rank.name = RANK_PRESETS[type][rank.id];
+    }
+    state.rankPreset = type;
+}
 export function defaults() {
     return {
-        schema: 1, enabled: true, homepage: true, replaceCharacters: true,
+        schema: 1, enabled: true, homepage: true, replaceCharacters: true, rankPreset: 'history',
         ranks: [
             { id: 'queen', name: '皇后', weight: 8 },
             { id: 'imperial', name: '皇贵妃', weight: 6 },
@@ -99,6 +119,7 @@ export function normalize(input, { strict = false } = {}) {
     base.enabled = input.enabled !== false;
     base.homepage = input.homepage !== false;
     base.replaceCharacters = input.replaceCharacters !== false;
+    base.rankPreset = input.rankPreset === 'empress' ? 'empress' : 'history';
     base.mode = MODES.some(([id]) => id === input.mode) ? input.mode : 'random';
     base.presentation = input.presentation === 'named' ? 'named' : 'blind';
     base.drawTag = text(input.drawTag).slice(0, 100);
@@ -152,16 +173,37 @@ export function entities(ctx, state, stats = {}) {
     return (ctx.characters || []).filter(c => c && safeKey(c.avatar) && c.avatar !== 'none').map(c => {
         const r = recordFor(state, c.avatar, c.date_added);
         const stat = stats[c.avatar] || {};
+        const firstCandidates = [number(stat.user_msg_count) > 0 ? timestamp(stat.date_first_chat) : 0, r.firstPlayedAt].filter(t => t > 0 && t <= Date.now());
+        const firstPlayed = firstCandidates.length ? Math.min(...firstCandidates) : 0;
+        // File ctime can change on copy/replace. Never place entry after a known interaction.
+        const entryCandidates = [r.enteredAt, timestamp(c.date_added), firstPlayed].filter(t => t > 0 && t <= Date.now());
+        if (entryCandidates.length) r.enteredAt = Math.min(...entryCandidates);
         const tags = [...new Set([...(ctx.tagMap?.[c.avatar] || []).map(id => tagNames.get(String(id))), ...(Array.isArray(c.data?.tags || c.tags) ? (c.data?.tags || c.tags) : [])].filter(t => typeof t === 'string' && t.trim()))];
         return {
             id: c.avatar, name: text(c.name || c.data?.name) || stem(c.avatar), raw: c, tags, record: r,
             rank: state.ranks.find(rank => rank.id === r.rankId) || state.ranks.find(rank => rank.id === 'unranked'),
             // Native user-message history avoids scoring alternate swipes as additional investment.
             investment: Math.max(0, number(stat.user_msg_count)),
-            firstPlayed: timestamp(stat.date_first_chat) > 0 && timestamp(stat.date_first_chat) <= Date.now() ? Math.min(timestamp(stat.date_first_chat), r.firstPlayedAt || Infinity) : r.firstPlayedAt,
+            played: number(stat.user_msg_count) > 0 || !!r.firstPlayedAt || !!r.lastPlayedAt,
+            firstPlayed,
             lastPlayed: Math.max(r.lastPlayedAt, timestamp(stat.date_last_chat)),
         };
     });
+}
+/** Read only actual message dates, never infer first play from latest/file mtime. */
+export function interactionDates(chat, now = Date.now()) {
+    let first = 0, last = 0, played = false, messageIndex = 0;
+    for (const row of chat) {
+        if (!row || typeof row.mes !== 'string' || row.is_system) continue;
+        const genuine = row.is_user === true || messageIndex > 0;
+        messageIndex++;
+        if (!genuine) continue; // An automatically inserted opening is not play.
+        played = true;
+        const at = timestamp(row.send_date) || timestamp(row.gen_started);
+        if (at <= 0 || at > now) continue;
+        first = first ? Math.min(first, at) : at; last = Math.max(last, at);
+    }
+    return { first, last, played };
 }
 export function drawWeight(entity, mode, now = Date.now()) {
     if (entity.rank.id === 'cold') return 0;
@@ -200,4 +242,7 @@ export function readBackup(value) {
     return normalize(value.data, { strict: true });
 }
 export function dateLabel(value) { return value ? new Date(value).toLocaleDateString('zh-CN') : '未知'; }
-export function companionLabel(first, now = Date.now()) { return first > 0 ? `相伴 ${Math.max(1, Math.floor((now - first) / DAY) + 1)} 天` : '尚未初见'; }
+export function companionLabel(first, now = Date.now(), played = false) {
+    const day = value => { const date = new Date(value); return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()); };
+    return first > 0 ? `相伴 ${Math.max(1, Math.round((day(now) - day(first)) / DAY) + 1)} 天` : played ? '初见时间待补全' : '尚未初见';
+}

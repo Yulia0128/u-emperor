@@ -1,5 +1,9 @@
 # 酒馆接口来源与兼容目标
 
+0.4.0 的事件隔离依据同一 1.15.0 提交的 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) 文档 click 处理器，以及 [RossAscends-mods.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/RossAscends-mods.js) 的 Escape 处理器。原生把不在 `.openDrawer` 内且非原生 popup 的点击视作面板外部点击；插件弹窗在 body 的独立层，因此只在插件自有根节点与 dialog 内停止 click 冒泡，Escape 也仅在自有界面内隔离，保留浏览器关闭当前 dialog 的默认行为。没有改写原生监听器或用户固定面板偏好。旧版在带该关闭逻辑的模拟宿主中可复现，新版验证同一路径通过；真实用户酒馆仍待验收。
+
+时间补读依据同一提交的 `stats.js`（后端及前端）、`characters.js` 与 `chats.js`：原生前端的 first_chat 可能随首次记入统计的消息初始化，后端重建也可能因历史日期解析失败留下 0／未来哨兵值；原生卡片 date_added 来自文件 ctime，复制或替换可能变动。插件通过已使用的 `/api/characters/chats`、`/api/chats/get` 只读消息 `send_date`，补充最早及最近实际互动；忽略自动开场与系统消息，文件修改时间不当成初见。并行上限为两个角色，单角色逐档读取；不调用 stats recreate/update，不改写用户聊天，不复算楼层。来源置信度 high（固定版本源码），运行置信度 medium（单元与模拟宿主），真实环境待验。
+
 0.3.1 浏览器兼容修复：插件不再依赖 `crypto.randomUUID()` 生成 DOM 或妃位标识。[该接口具有安全上下文限制](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/randomUUID)，不能假定 HTTP 局域网／IP 访问时可用。本地标识生成器不覆盖全局 crypto、不用于安全令牌，已有角色及妃位标识原样保留。已在缺少该方法的 Chrome 模拟环境验证，仍不等同于用户真实酒馆的完整验收。
 
 目标：官方 SillyTavern **1.15.0**；源码基线提交 `1c0e7ea9556afcc3ae55c888287dff67a6aa42fc`。此前也只读比较过 1.16.0 的角色选择、聊天切换和替换入口。未对所有中间版本或第三方分支作兼容承诺。
@@ -23,7 +27,7 @@
 | `world_info.charLore[].extraBooks`、`loadWorldInfo(name)`、`openWorldInfoEditor(name)` | [world-info.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/world-info.js) |
 | `APP_READY`, `MESSAGE_SENT`, `MESSAGE_RECEIVED`, `CHAT_CHANGED`, `CHARACTER_RENAMED`, `CHARACTER_EDITED`, `CHAT_CREATED`, `CHAT_DELETED` 等 | [events.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/events.js)；使用上下文导出的常量，不手写事件字符串 |
 
-少量明确的 DOM 集成：原生扩展菜单 `#extensionsMenu`，扩展设置 `#extensions_settings2 / #extensions_settings`，首页 `#chat .welcomePanel`，原生创建 `#rm_button_create`。这些是有意的宿主入口适配，不作为接口失败后的隐式降级。首页和创建入口找不到时保留原生界面／显示错误；核心管理器可从设置或菜单打开。
+少量明确的 DOM 集成：扩展设置 `#extensions_settings2 / #extensions_settings`，首页 `#chat .welcomePanel`，原生创建 `#rm_button_create`。这些是有意的宿主入口适配，不作为接口失败后的隐式降级。首页和创建入口找不到时保留原生界面／显示错误；核心管理器从扩展设置打开。0.4.1 移除小魔棒扩展菜单入口，设置使用普通文字、原生 checkbox_label 与 menu_button，不加载插件字体或黑金控件样式。启动开关复用管理设置的 enabled 字段。
 
 0.2.0 的原生角色抽屉适配单独在 `native-panel.js` 中实现，依据同一固定提交的 [public/index.html](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/index.html)：`#right-nav-panel`、`#right-nav-panelheader`、`#rightNavDrawerIcon / #unimportantYes`、`#rm_button_characters`。不拦截或替换原生点击处理器；在原生面板内挂载独立节点，以可撤销的 class 隐藏其他直接子节点。保留原生拖动条，原生编辑时临时解除隐藏，禁用时清理挂载与监听并恢复原生内容。已在模拟宿主中验证可见性、原生草稿保留和禁用恢复；真实酒馆的抽屉开合及编辑状态仍待验证。
 

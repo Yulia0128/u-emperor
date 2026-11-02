@@ -1,4 +1,4 @@
-import { KEY, normalize, entities, recordFor, logAction, renameIdentity } from './core.js';
+import { KEY, normalize, entities, recordFor, logAction, renameIdentity, interactionDates, timestamp } from './core.js';
 import { TavernHost } from './host.js';
 import { EmperorUI, node } from './ui.js';
 import { NativeCharacterPanel } from './native-panel.js';
@@ -26,19 +26,28 @@ function scheduleHome() { if (!frame) frame = requestAnimationFrame(() => { fram
 function controls() {
     if (!enabled) return;
     nativePanel?.sync();
-    const menu = document.getElementById('extensionsMenu');
-    if (menu && !document.getElementById('ue-open')) {
-        const b = node('button', 'list-group-item flex-container flexGap5 interactable ue-entry', '♛ U皇万岁'); b.type = 'button'; b.id = 'ue-open'; b.addEventListener('click', () => ui.open()); menu.append(b);
-    }
+    document.getElementById('ue-open')?.remove();
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (settings && !document.getElementById('ue-settings')) {
         const panel = node('div'); panel.id = 'ue-settings';
-        const details = node('details'); const title = node('summary', '', '♛ U皇万岁');
-        const actions = node('div', 'ue-setting-actions'); actions.append(ui.button('打开管理器', () => ui.open()), ui.button('设置与备份', () => ui.settings()));
-        details.append(title, node('p', '', '妃位册封 · 盲翻点名 · 多存档管理'), actions); panel.append(details); settings.append(panel);
+        const toggle = node('input'); toggle.type = 'checkbox'; toggle.id = 'ue-enabled';
+        const label = node('label', 'checkbox_label'); label.htmlFor = toggle.id; label.append(toggle, node('span', '', '启动插件'));
+        toggle.addEventListener('change', () => {
+            ui.state.enabled = toggle.checked; ui.save();
+            if (!toggle.checked) ui.closeAll();
+            else ui.historyJobs.clear();
+            controls(); reconcileHome();
+        });
+        const open = node('button', 'menu_button', '打开管理器'); open.type = 'button'; open.id = 'ue-open-manager';
+        open.addEventListener('click', () => { if (ui.state.enabled) ui.open(); });
+        const actions = node('div', 'flex-container flexGap10'); actions.append(label, open);
+        panel.append(node('div', '', 'U皇万岁'), actions); settings.append(panel);
     }
+    const toggle = document.getElementById('ue-enabled'); if (toggle) toggle.checked = ui.state.enabled;
+    const open = document.getElementById('ue-open-manager'); if (open) open.disabled = !ui.state.enabled;
 }
 function trackPlay(index, type) {
+    if (!ui.state.enabled) return;
     const ctx = host.ctx;
     if (ctx.groupId != null || ctx.characterId == null || type === 'first_message') return;
     const message = ctx.chat?.[Number(index)];
@@ -46,10 +55,11 @@ function trackPlay(index, type) {
     const avatar = ctx.characters?.[ctx.characterId]?.avatar;
     if (!avatar) return;
     const r = recordFor(ui.state, avatar);
-    // Hydrate historical first interaction before recording today's activity.
-    const historical = host.statsValue[avatar]?.date_first_chat;
-    if (historical > 0 && historical < Date.now()) r.firstPlayedAt = r.firstPlayedAt ? Math.min(historical, r.firstPlayedAt) : historical;
-    logAction(ui.state, avatar, 'play', Date.now(), ctx.getCurrentChatId()); host.invalidate(); ui.save();
+    // Current message dates and background archive reads recover first interaction.
+    // Native frontend stats may start their clock at an automatically inserted greeting.
+    const dates = interactionDates(ctx.chat);
+    if (dates.first) r.firstPlayedAt = r.firstPlayedAt ? Math.min(r.firstPlayedAt, dates.first) : dates.first;
+    logAction(ui.state, avatar, 'play', timestamp(message.send_date) || Date.now(), ctx.getCurrentChatId()); host.invalidate(); ui.save();
 }
 export async function onEnable() {
     if (enabled) return;
@@ -66,10 +76,10 @@ export async function onEnable() {
     ui = new EmperorUI(host); ui.onHomePreference = scheduleHome; enabled = true;
     nativePanel = new NativeCharacterPanel(ui);
     ui.onNativeEntry = () => nativePanel.showNative();
-    ui.onPanelPreference = () => nativePanel.sync();
+    ui.onPanelPreference = controls;
     const start = () => {
         ready = true; controls(); scheduleHome();
-        host.stats().then(() => ui.redraw()).catch(() => {});
+        if (ui.state.enabled) host.stats().then(() => ui?.redraw()).catch(() => {});
         if (!observer && document.getElementById('chat')) { observer = new MutationObserver(scheduleHome); observer.observe(document.getElementById('chat'), { childList: true }); }
     };
     disposers.push(host.on('APP_READY', start));
@@ -87,7 +97,7 @@ export function onDisable() {
     observer?.disconnect(); observer = null;
     if (frame) cancelAnimationFrame(frame); frame = null;
     nativePanel?.dispose(); nativePanel = null;
-    clearHome(); ui?.dispose(); ui = null;
+    clearHome(); ui?.dispose(); ui = null; host?.dispose(); host = null;
     document.getElementById('ue-open')?.remove(); document.getElementById('ue-settings')?.remove();
 }
 onEnable().catch(error => console.error('U皇万岁：初始化失败。', error.message));
