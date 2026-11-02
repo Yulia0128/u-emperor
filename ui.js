@@ -1,6 +1,7 @@
 import { KEY, VERSION, MODES, entities, excerpt, recordFor, assignRank, removeRank, archiveKey, logAction, weightedPick, drawWeight, discordUrl, downloadUrl, dateLabel, companionLabel, makeBackup, readBackup, normalize, applyRankPreset } from './core.js';
 import { saveFile, fullBackup } from './backup.js';
 import { createId } from './ids.js';
+import { bindCarousel } from './carousel.js';
 
 const asset = name => globalThis.__UE_PREVIEW_ASSETS__?.[name] || new URL(`./assets/${name}`, import.meta.url).href;
 const nameFace = asset('plaque-name-face.png');
@@ -116,21 +117,25 @@ export class EmperorUI {
         const name = await this.host.newChat(entity.id, greetingIndex);
         logAction(this.state, entity.id, 'open', Date.now(), name); this.save(); this.closeAll();
     }
-    card(entity, queen = false) {
-        const card = node('article', `ue-card ${queen ? 'ue-queen' : ''}`);
+    rankStyle(element, rankId) {
+        const position = Math.max(0, this.state.ranks.findIndex(rank => rank.id === rankId));
+        const colors = ['#e5c576', '#c7d0db', '#bd8b65'];
+        const color = colors[position] || `hsl(215 7% ${Math.max(21, 48 - (position - 3) * 5)}%)`;
+        element.style.setProperty('--ue-rank-gold', color);
+        element.style.setProperty('--ue-rank-label', position < 3 ? color : `hsl(215 5% ${Math.max(58, 72 - (position - 3) * 3)}%)`);
+        element.style.setProperty('--ue-rank-glow', String(position < 3 ? [.36, .27, .22][position] : Math.max(.04, .16 - (position - 3) * .025)));
+    }
+    card(entity) {
+        const card = node('article', `ue-card ${entity.rank.id === 'queen' ? 'ue-queen' : ''}`);
         card.dataset.rank = entity.rank.id;
-        const position = this.state.ranks.findIndex(r => r.id === entity.rank.id);
-        const borders = ['#edce79', '#cdb271', '#b6a174', '#aaa69b', '#8e929b', '#70767e', '#565c64', '#454b54'];
-        const depth = Math.round(Math.max(0, position) / Math.max(1, this.state.ranks.length - 1) * (borders.length - 1));
-        card.style.setProperty('--ue-rank-gold', borders[depth]);
+        this.rankStyle(card, entity.rank.id);
         const open = this.button('', () => this.detail(entity.id), 'ue-card-open', `查看 ${entity.name}`); open.append(this.cover(entity));
         const content = node('div', 'ue-card-copy');
         content.append(node('h3', '', entity.name), node('p', 'ue-card-meta', this.companion(entity)));
-        if (entity.tags.length) { const tags = node('div', 'ue-tags'); entity.tags.slice(0, 3).forEach(tag => tags.append(node('span', '', tag))); content.append(tags); }
         const actions = node('div', 'ue-card-actions');
-        if (queen) actions.append(this.button('▷ 继续上次', () => this.continue(entity), 'ue-primary'));
+        actions.append(this.button('▷', () => this.continue(entity), 'ue-icon ue-primary', `继续 ${entity.name} 的上次聊天`));
         actions.append(this.button('···', () => this.detail(entity.id), 'ue-icon', `${entity.name} 的档案与存档`));
-        content.append(actions); card.append(open, content); return card;
+        card.append(open, content, actions); return card;
     }
     shell({ home = false, native = false } = {}) {
         const root = node('section', 'ue-app'); root.dataset.ueVersion = VERSION; root.setAttribute('aria-label', 'U皇万岁角色管理器');
@@ -143,6 +148,11 @@ export class EmperorUI {
         if (native) tools.append(this.button('原生面板', () => this.onNativeEntry?.(), 'ue-subtle'));
         const layout = node('div', 'ue-layout'); const sidebar = node('nav', 'ue-sidebar'); sidebar.setAttribute('aria-label', '妃位快速跳转');
         const main = node('div', 'ue-main'); const top = node('div', 'ue-toolbar'); const count = node('span', 'ue-muted');
+        let viewRank = 'all', renderedRank = 'all'; const viewScrolls = new Map(), railPositions = new Map(); let carousels = [];
+        const navigate = async rankId => {
+            viewRank = rankId; rankDrawer?.close(); await draw();
+            groups.querySelector('.ue-category-title')?.focus({ preventScroll: true });
+        };
         let rankDrawer;
         const categories = this.button('', () => {
             if (rankDrawer?.open) return;
@@ -155,7 +165,8 @@ export class EmperorUI {
         const filters = node('div', 'ue-drawer-filters'); filters.append(field('搜索角色或标签', search), field('按标签筛选', tag), node('h3', '', '妃位分类'), sidebar);
         const refresh = this.button('↻', async () => { await this.host.refresh(); await draw(); }, 'ue-icon', '刷新角色与存档信息');
         const drawButton = this.button('翻牌', () => this.drawDialog(), 'ue-primary ue-draw-entry');
-        top.append(count, refresh, drawButton); const groups = node('div', 'ue-groups'); main.append(top, groups); layout.append(filters, main); root.append(header, layout);
+        const back = this.button('‹ 返回金字塔', () => navigate('all'), 'ue-subtle ue-back-gallery'); back.hidden = true;
+        top.append(back, count, refresh, drawButton); const groups = node('div', 'ue-groups'); main.append(top, groups); layout.append(filters, main); root.append(header, layout);
         let revision = 0, timer;
         const draw = async () => {
             const id = ++revision; const all = await this.all();
@@ -164,34 +175,60 @@ export class EmperorUI {
             const filtered = all.filter(e => (!query || [e.name, ...e.tags].join(' ').toLocaleLowerCase().includes(query)) && (!tag.value || e.tags.includes(tag.value)));
             const selectedTag = tag.value;
             tag.replaceChildren(...[['', '全部标签'], ...[...new Set(all.flatMap(e => e.tags))].sort().map(t => [t, t])].map(([value, label]) => { const o = node('option', '', label); o.value = value; return o; })); tag.value = selectedTag;
-            count.textContent = `${filtered.length} / ${all.length} 位角色`;
+            if (!this.state.ranks.some(rank => rank.id === viewRank)) viewRank = 'all';
+            viewScrolls.set(renderedRank, main.scrollTop);
+            groups.querySelectorAll('.ue-carousel').forEach(rail => railPositions.set(rail.dataset.rank, rail.querySelector('.ue-carousel-viewport').scrollLeft));
+            carousels.forEach(carousel => carousel.dispose()); carousels = [];
+            root.dataset.view = viewRank === 'all' ? 'gallery' : 'category'; root.dataset.rank = viewRank;
+            back.hidden = viewRank === 'all'; this.activeRank = viewRank;
+            const current = viewRank === 'all' ? filtered : filtered.filter(entity => entity.rank.id === viewRank);
+            count.textContent = `${current.length} / ${all.length} 位角色`;
             sidebar.replaceChildren(); groups.replaceChildren();
-            sidebar.append(this.button('全部角色', () => { rankDrawer?.close(); main.scrollTo({ top: 0, behavior: 'instant' }); this.activeRank = 'all'; syncNav(); }, 'ue-nav-item'));
-            for (const rank of this.state.ranks) {
+            sidebar.append(this.button('全部角色', () => navigate('all'), 'ue-nav-item'));
+            for (const [position, rank] of this.state.ranks.entries()) {
                 const members = filtered.filter(e => e.rank.id === rank.id).sort((a, b) => b.lastPlayed - a.lastPlayed || a.name.localeCompare(b.name, 'zh-CN'));
-                if ((query || selectedTag) && !members.length) continue;
-                const section = node('section', `ue-rank-section ${rank.id === 'cold' ? 'ue-cold' : ''}`); section.id = createId('ue-section');
-                const nav = this.button('', () => { rankDrawer?.close(); section.scrollIntoView({ block: 'start', behavior: 'instant' }); this.activeRank = rank.id; syncNav(); }, 'ue-nav-item'); nav.dataset.rank = rank.id;
+                if ((query || selectedTag) && !members.length && viewRank !== rank.id) continue;
+                const nav = this.button('', () => navigate(rank.id), 'ue-nav-item'); nav.dataset.rank = rank.id;
                 nav.append(node('span', '', rank.name), node('span', 'ue-count', String(members.length))); sidebar.append(nav);
-                const heading = node('div', 'ue-section-heading'); heading.append(node('h2', '', rank.name), node('span', 'ue-count', String(members.length)));
+                if (viewRank !== 'all' && viewRank !== rank.id) continue;
+                const section = node('section', `ue-rank-section ${viewRank === 'all' ? 'ue-gallery-tier' : 'ue-category-view'} ${rank.id === 'cold' ? 'ue-cold' : ''}`);
+                section.dataset.rank = rank.id; this.rankStyle(section, rank.id);
+                const heading = node('div', 'ue-section-heading'); const title = node('h2');
+                if (viewRank === 'all') title.append(this.button(rank.name, () => navigate(rank.id), 'ue-rank-entry', `查看${rank.name}全部角色`));
+                else { title.textContent = rank.name; title.className = 'ue-category-title'; title.tabIndex = -1; }
+                heading.append(title, node('span', 'ue-count', String(members.length)));
                 if (rank.id === 'cold') heading.append(node('small', 'ue-muted', '不参与随机翻牌'));
-                const grid = node('div', rank.id === 'queen' ? 'ue-queen-grid' : 'ue-card-grid');
-                const visible = members.slice(0, 24); visible.forEach(e => grid.append(this.card(e, rank.id === 'queen')));
-                if (!members.length) grid.append(node('p', 'ue-empty ue-compact', rank.id === 'queen' ? '凤位暂空，静候册封。' : rank.id === 'cold' ? '这里还没有角色。' : '尚未册封到此位。'));
-                section.append(heading, grid);
+                section.append(heading);
+                const visible = members.slice(0, 24);
+                let grid, carousel;
+                if (viewRank === 'all' && members.length) {
+                    const rail = node('div', 'ue-carousel'); rail.dataset.rank = rank.id; rail.style.setProperty('--ue-slots', String(position === 0 ? 1 : position * 2));
+                    const viewport = node('div', 'ue-carousel-viewport'); viewport.tabIndex = 0; viewport.setAttribute('role', 'region'); viewport.setAttribute('aria-label', `${rank.name}角色横向列表`);
+                    grid = node('div', 'ue-carousel-track'); viewport.append(grid);
+                    const left = node('button', 'ue-button ue-carousel-arrow', '‹'); left.type = 'button'; left.dataset.direction = 'previous'; left.setAttribute('aria-label', `向左浏览${rank.name}`);
+                    const right = node('button', 'ue-button ue-carousel-arrow', '›'); right.type = 'button'; right.dataset.direction = 'next'; right.setAttribute('aria-label', `向右浏览${rank.name}`); left.hidden = right.hidden = true;
+                    rail.append(viewport, left, right); section.append(rail);
+                    visible.forEach(entity => grid.append(this.card(entity)));
+                    carousel = bindCarousel(rail, railPositions.get(rank.id) || 0); carousels.push(carousel);
+                } else {
+                    grid = node('div', 'ue-card-grid'); visible.forEach(entity => grid.append(this.card(entity))); section.append(grid);
+                }
+                if (!members.length) { section.classList.add('ue-vacant'); grid.append(node('p', 'ue-empty ue-compact', query || selectedTag ? '该分类没有符合筛选的角色。' : rank.id === 'queen' ? '尊位暂空，静候册封。' : rank.id === 'cold' ? '这里还没有角色。' : '尚未册封到此位。')); }
                 let shown = visible.length;
                 if (members.length > shown) {
-                    const more = this.button(`再看 ${Math.min(24, members.length - shown)} 位`, () => { const next = members.slice(shown, shown + 24); next.forEach(e => grid.append(this.card(e))); shown += next.length; more.textContent = `再看 ${Math.min(24, members.length - shown)} 位`; more.hidden = shown >= members.length; }, 'ue-subtle'); section.append(more);
+                    const more = this.button(`再看 ${Math.min(24, members.length - shown)} 位`, () => { const next = members.slice(shown, shown + 24); next.forEach(e => grid.insertBefore(this.card(e), more.parentElement === grid ? more : null)); shown += next.length; more.textContent = `再看 ${Math.min(24, members.length - shown)} 位`; more.hidden = shown >= members.length; carousel?.observeCards(); }, 'ue-subtle ue-load-more');
+                    if (carousel) grid.append(more); else section.append(more);
                 }
                 groups.append(section);
             }
             if (!all.length) { groups.replaceChildren(node('p', 'ue-empty', '后宫尚空。点击右上角 ＋，迎接第一位角色。')); }
             else if (!filtered.length) groups.replaceChildren(node('p', 'ue-empty', '没有符合当前筛选的角色。'));
             syncNav();
+            renderedRank = viewRank; main.scrollTop = viewScrolls.get(viewRank) || 0;
         };
         const syncNav = () => sidebar.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String((b.dataset.rank || 'all') === this.activeRank)));
         search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 140); }); tag.addEventListener('change', draw);
-        const shell = { root, draw, dispose: () => { revision++; clearTimeout(timer); rankDrawer?.close(); this.shells.delete(shell); } };
+        const shell = { root, draw, dispose: () => { revision++; clearTimeout(timer); carousels.forEach(carousel => carousel.dispose()); rankDrawer?.close(); this.shells.delete(shell); } };
         this.shells.add(shell); draw(); return shell;
     }
     open() {

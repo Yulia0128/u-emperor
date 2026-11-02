@@ -1,5 +1,7 @@
 # 酒馆接口来源与兼容目标
 
+0.5.0 的金字塔、横排滚动和分类完整页仅修改插件自有前端。分类页与画廊共享同一角色集合和筛选条件，当前分类、滚动位置不写入角色或聊天。carousel.js 的 DOM 监听、ResizeObserver、IntersectionObserver 与动画帧随所属界面销毁；观察器不可用时仍保留原生滚动与按钮。没有新增酒馆 API 依赖，没有调整 schema 1 管理数据与皇后／冷宫规则。测试证据仍为离线和模拟宿主，真实酒馆的原生拖动／主题叠加／手机触摸需在目标环境验收。
+
 0.4.0 的事件隔离依据同一 1.15.0 提交的 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) 文档 click 处理器，以及 [RossAscends-mods.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/RossAscends-mods.js) 的 Escape 处理器。原生把不在 `.openDrawer` 内且非原生 popup 的点击视作面板外部点击；插件弹窗在 body 的独立层，因此只在插件自有根节点与 dialog 内停止 click 冒泡，Escape 也仅在自有界面内隔离，保留浏览器关闭当前 dialog 的默认行为。没有改写原生监听器或用户固定面板偏好。旧版在带该关闭逻辑的模拟宿主中可复现，新版验证同一路径通过；真实用户酒馆仍待验收。
 
 时间补读依据同一提交的 `stats.js`（后端及前端）、`characters.js` 与 `chats.js`：原生前端的 first_chat 可能随首次记入统计的消息初始化，后端重建也可能因历史日期解析失败留下 0／未来哨兵值；原生卡片 date_added 来自文件 ctime，复制或替换可能变动。插件通过已使用的 `/api/characters/chats`、`/api/chats/get` 只读消息 `send_date`，补充最早及最近实际互动；忽略自动开场与系统消息，文件修改时间不当成初见。并行上限为两个角色，单角色逐档读取；不调用 stats recreate/update，不改写用户聊天，不复算楼层。来源置信度 high（固定版本源码），运行置信度 medium（单元与模拟宿主），真实环境待验。

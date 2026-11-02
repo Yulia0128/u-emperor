@@ -1,4 +1,4 @@
-export const VERSION = '0.4.1';
+export const VERSION = '0.5.0';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
