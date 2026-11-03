@@ -1,5 +1,5 @@
-import { chatRows, downloadUrl, stem, timestamp, interactionDates } from './core.js';
-import { readNativeHistory } from './native-history.js';
+import { KEY, chatRows, downloadUrl, stem, timestamp, interactionDates } from './core.js';
+import { readNativeHistory, calibrateChatEntry } from './native-history.js';
 
 /** Native adapter. Every version-sensitive dependency is pinned in docs/COMPATIBILITY.md. */
 export class TavernHost {
@@ -48,7 +48,10 @@ export class TavernHost {
                     for (const row of rows) {
                         if (this.disposed) { dates.complete = false; break; }
                         try {
-                            const current = interactionDates(await this.readChat(avatar, row.name));
+                            const chat = await this.readChat(avatar, row.name);
+                            const state = this.ctx.extensionSettings?.[KEY];
+                            if (state?.chronicle) calibrateChatEntry(state, avatar, row.name, chat);
+                            const current = interactionDates(chat);
                             dates.played ||= current.played;
                             if (current.first) dates.first = dates.first ? Math.min(dates.first, current.first) : current.first;
                             dates.last = Math.max(dates.last, current.last);

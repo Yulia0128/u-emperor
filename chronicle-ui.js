@@ -47,7 +47,7 @@ export function openChronicle(ui, node) {
     window.addEventListener('resize', positionBubble);
     dialog.addEventListener('close', () => { bubbleRevision++; finishFade?.(); window.removeEventListener('resize', positionBubble); }, { once: true });
     const note = node('p', 'ue-muted ue-small');
-    note.textContent = `自 ${dayKey(book.startedAt, book.zone)} 开始记载 · ${book.zone}`;
+    note.textContent = `自 ${dayKey(book.startedAt, book.zone)} 开始记载`;
     body.append(head, note, content);
     const importStatus = node('p', 'ue-muted ue-small ue-history-import'); importStatus.setAttribute('role', 'status');
     if (ui.host.importHistory) {
@@ -65,7 +65,7 @@ export function openChronicle(ui, node) {
             ui.save(); if (!dialog.open) return;
             importStatus.textContent = result.failed || result.undated ? '部分原生记录未能读取完整，当前显示已读取的数据。' : '';
             importStatus.hidden = !importStatus.textContent;
-            note.textContent = `自 ${dayKey(book.startedAt, book.zone)} 开始记载 · ${book.zone}`;
+            note.textContent = `自 ${dayKey(book.startedAt, book.zone)} 开始记载`;
             render(); ui.redraw();
         }).catch(error => { if (dialog.open) importStatus.textContent = `原生记录读取未完成：${error.message}`; });
     }

@@ -252,9 +252,11 @@ export class EmperorUI {
         intro.append(node('span', 'ue-badge', entity.rank.name), companion, entered);
         const days = Object.values(this.state.chronicle.days).filter(rows => Object.hasOwn(rows, avatar)).length;
         intro.append(node('p', 'ue-muted', `已记录实际陪伴 ${days} 天`));
-        if (!entity.record.enteredExact) intro.append(node('small', 'ue-muted', '入宫日期为历史参考，非确切首次导入日'));
+        const sourceNote = node('small', 'ue-muted ue-entry-source');
+        const syncSourceNote = latest => { sourceNote.hidden = latest.record.enteredExact; sourceNote.textContent = ['archive', 'message'].includes(latest.record.enteredSource) ? '入宫日期已按最早历史记录校准' : '入宫日期为历史参考，非确切首次导入日'; };
+        syncSourceNote(entity); intro.append(sourceNote);
         const historyJob = this.host.historyJobs?.get(avatar);
-        historyJob?.then(async () => { if (!dialog.open) return; const latest = (await this.all()).find(e => e.id === avatar); if (latest && dialog.open) { companion.textContent = this.companion(latest); entered.textContent = `入宫于 ${dateLabel(latest.record.enteredAt)}`; } }).catch(() => {});
+        historyJob?.then(async () => { if (!dialog.open) return; const latest = (await this.all()).find(e => e.id === avatar); if (latest && dialog.open) { companion.textContent = this.companion(latest); entered.textContent = `入宫于 ${dateLabel(latest.record.enteredAt)}`; syncSourceNote(latest); } }).catch(() => {});
         const actions = node('div', 'ue-actions'); actions.append(this.button('▷ 继续上次', () => this.continue(entity), 'ue-primary'), this.button('开启新故事', () => this.fresh(entity)));
         intro.append(actions); top.append(intro); body.append(top);
         const tabs = node('nav', 'ue-tabs'); tabs.setAttribute('aria-label', '角色详情'); const panel = node('div', 'ue-tab-panel');
@@ -482,6 +484,23 @@ export class EmperorUI {
             try {
                 all = await this.all({ statsRequired: mode.value === 'rekindle' });
                 if (!dialog.open || id !== revision) return;
+                if (mode.value === 'rekindle' && this.host.history) {
+                    const wantedTag = savedTag || tag.value;
+                    const missing = all.filter(e => e.played && !e.lastPlayed && e.rank.id !== 'cold' && (!wantedTag || e.tags.includes(wantedTag)) && (!rank.value || e.rank.id === rank.value));
+                    for (const [i, entity] of missing.entries()) {
+                        if (!dialog.open || id !== revision) return;
+                        status.hidden = false; status.textContent = `正在读取真实互动日期 · ${i + 1} / ${missing.length}`;
+                        try {
+                            const dates = await this.host.history(entity.id);
+                            if (!dialog.open || id !== revision || this.controller.signal.aborted) return;
+                            if (dates.complete && dates.last) {
+                                entity.record.lastPlayedAt = Math.max(entity.record.lastPlayedAt, dates.last); entity.lastPlayed = entity.record.lastPlayedAt;
+                                if (dates.first) entity.record.firstPlayedAt = entity.record.firstPlayedAt ? Math.min(entity.record.firstPlayedAt, dates.first) : dates.first;
+                            }
+                        } catch { /* A missing interaction date is not a file-time fallback. */ }
+                    }
+                    if (missing.length) this.save(); status.hidden = true;
+                }
                 const currentTag = savedTag || tag.value; savedTag = '';
                 tag.replaceChildren(...[['', '全部标签'], ...[...new Set(all.flatMap(e => e.tags))].sort().map(t => [t, t])].map(([v, t]) => { const o = node('option', '', t); o.value = v; return o; })); tag.value = currentTag;
                 if (tag.selectedIndex < 0) tag.value = '';

@@ -1,5 +1,15 @@
 # 酒馆接口来源与兼容目标
 
+0.7.6 移除 entities.lastPlayed 中的原生 date_last_chat：官方 [1.18.0 stats.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/src/endpoints/stats.js) 重建会从 chatStat.mtimeMs 计算此值，故不能作为真实游玩凭据。实时沿用 MESSAGE_SENT／MESSAGE_RECEIVED，以设备 Date.now 记录有效事件；已有消息对象签名阻止重复通知刷新时间。首次自动开场和系统消息继续排除。没有引入 MESSAGE_SWIPED：仅切换已有回复不作为新的生成事件。
+
+历史来源补充 [1.18.0 public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/public/script.js) 中流式 message.gen_started／gen_finished，非流式 append／appendFinal／swipe／普通新回复路径的生成日期，以及同步 swipe_info 的 send_date／gen_started／gen_finished。interactionTimes 只读取这些原生时间字段，拒绝未来／无效值，编辑元数据和文件时间不参与。原始楼层身份仍使用原始消息日期，生成活动补充不重复增加楼层。旧情复燃在缺日期时调用已有 host.history 校验完整记录，确认不到则不参与此规则，不偷换成文件时间。新增单元与模拟事件检查，不等同于真实酒馆多种 API／生成模式验收。
+
+0.7.4 根据用户截图，实际目标版本增补官方 **SillyTavern 1.18.0** 核对，最低目标仍为 1.15.0。来源：[1.18.0 characters.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/src/endpoints/characters.js) processCharacter 将 date_added 设为 charStat.ctimeMs，将 create_date 设为卡文件内持久值或 ctime 兜底；PNG／JSON／CharX 导入路径会设置 create_date，edit 复用传入的 create_date。该日期比文件 ctime 更适合恢复导入记录，但替换／重新导入仍可能重置。此前只读取 date_added，遗漏了这个区别。
+
+截图的「2026-08-15@03h09m40s962ms」是原生聊天建档名：[1.18.0 public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/public/script.js) 使用 name2 + humanizedDateTime 生成新聊天名；[RossAscends-mods.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/public/scripts/RossAscends-mods.js) 使用本地年月日时分秒生成该后缀，故专用后缀解析使用浏览器本地时区，且验证真实日期。聊天创建不能无条件等同首次导入：缺少更早导入记录时仅用作历史存在证据，持久保存 entryEvidenceAt 与 enteredSource，并在档案标注校准来源。初始开场不算陪伴，但可作为卡已存在的证据；存档正文中的任意故事日期不参与校准，明确观察的新导入不被复制的旧聊天反推。
+
+来源置信度 high（官方 1.18.0 版本源码），用户真实服务端数据未接入。单元和模拟宿主使用截图同形日期验证，不能据此声称已读取用户实际角色 JSON／聊天文件。
+
 0.7.3 恢复原生历史来源。再次核对官方 1.15.0 固定提交 [characters.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/characters.js) 的 processCharacter：date_added 来自文件 ctimeMs，不是插件加载日，也不是 first_chat。它仍可能受文件复制／替换影响，因此保留已经保存的更早入库日期；无法从丢失的原生字段还原精确首次导入。移除 enteredExact 对更早原生日期的锁定，不再用初见时间兜底入宫。角色列表初次异步加载单独建立基线。
 
 原生历史使用已核对的 `/api/characters/chats` 列表与 [chats.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/chats.js) `/get`，逐份读取消息 send_date／gen_started、is_user、is_system 和 extra.token_count，提取后不持久化正文。仅在打开史册后读取，单存档顺序处理、存档间让出事件循环，关闭取消后续读取。不是服务端聚合或跨设备实时合并。规范化的角色、消息位置、时间、角色类型用于重复／共同分支前文去重；旧键按文件名与原始时间转换。删除／编辑／缺少原始日期／时间冲突及特殊导入格式仍需真实环境验证，不宣称无条件还原所有历史。来源置信度 high，真实运行待验收。

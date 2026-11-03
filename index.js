@@ -9,13 +9,15 @@ let enabled = false;
 let generation = 0;
 let nativePanel;
 let knownAvatars = new Set(), baselineMessages = new WeakSet();
+let observedInteractions = new WeakMap();
+const interactionSignature = message => JSON.stringify([message.send_date, message.gen_started, message.gen_finished, message.swipe_id, message.mes?.length]);
 let inventoryReady = false;
-function primeMessages() { baselineMessages = new WeakSet((host.ctx.chat || []).filter(m => m && typeof m === 'object')); }
+function primeMessages() { const messages = (host.ctx.chat || []).filter(m => m && typeof m === 'object'); baselineMessages = new WeakSet(messages); observedInteractions = new WeakMap(messages.map(m => [m, interactionSignature(m)])); }
 function discoverArrivals() {
     const characters = (host.ctx.characters || []).filter(c => c.avatar && c.avatar !== 'none');
     if (!inventoryReady) { knownAvatars = new Set(characters.map(c => c.avatar)); inventoryReady = characters.length > 0; entities(host.ctx, ui.state); ui.save(); return; }
     for (const c of host.ctx.characters || []) if (c.avatar && c.avatar !== 'none' && !knownAvatars.has(c.avatar)) {
-        knownAvatars.add(c.avatar); const record = recordFor(ui.state, c.avatar, c.date_added); if (ui.state.enabled && (timestamp(c.date_added) || record.enteredAt)) arrival(ui.state, c.avatar, timestamp(c.date_added) || record.enteredAt);
+        knownAvatars.add(c.avatar); const record = recordFor(ui.state, c.avatar, timestamp(c.create_date) || c.date_added); if (ui.state.enabled && (timestamp(c.create_date) || timestamp(c.date_added) || record.enteredAt)) arrival(ui.state, c.avatar, timestamp(c.create_date) || timestamp(c.date_added) || record.enteredAt, 'native');
     }
     ui.save();
 }
@@ -78,13 +80,17 @@ function trackPlay(index, type) {
     const r = recordFor(ui.state, avatar);
     const messageKey = messageIdentity(avatar, ctx.getCurrentChatId(), Number(index), timestamp(message.send_date) || timestamp(message.gen_started), message.is_user);
     const newFloor = !baselineMessages.has(message) && !['swipe', 'continue', 'append', 'appendFinal'].includes(type);
-    activity(ui.state, avatar, { key: messageKey, previous: r.lastPlayedAt, tokens: message.extra?.token_count, newFloor });
+    const signature = interactionSignature(message);
+    if (!newFloor && (!['swipe', 'continue', 'append', 'appendFinal'].includes(type) || observedInteractions.get(message) === signature)) return;
+    const playedAt = Date.now();
+    activity(ui.state, avatar, { key: messageKey, at: playedAt, previous: r.lastPlayedAt, tokens: message.extra?.token_count, newFloor });
+    observedInteractions.set(message, signature);
     baselineMessages.add(message);
     // Current message dates and background archive reads recover first interaction.
     // Native frontend stats may start their clock at an automatically inserted greeting.
     const dates = interactionDates(ctx.chat);
     if (dates.first) r.firstPlayedAt = r.firstPlayedAt ? Math.min(r.firstPlayedAt, dates.first) : dates.first;
-    logAction(ui.state, avatar, 'play', timestamp(message.send_date) || Date.now(), ctx.getCurrentChatId()); host.invalidate(); ui.save();
+    logAction(ui.state, avatar, 'play', playedAt, ctx.getCurrentChatId()); host.invalidate(); ui.save();
 }
 export async function onEnable() {
     if (enabled) return;

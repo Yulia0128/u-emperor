@@ -1,5 +1,5 @@
 import { newChronicle, cleanChronicle, promotion } from './chronicles.js';
-export const VERSION = '0.7.3';
+export const VERSION = '0.7.6';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -76,6 +76,8 @@ function cleanRecord(input = {}) {
         rankId: text(record.rankId) || 'unranked', sourceUrl,
         enteredAt: Math.max(0, number(record.enteredAt)),
         enteredExact: record.enteredExact === true,
+        enteredSource: ['import', 'native', 'archive', 'message', 'file'].includes(record.enteredSource) ? record.enteredSource : '',
+        entryEvidenceAt: Math.max(0, number(record.entryEvidenceAt)),
         firstPlayedAt: Math.max(0, number(record.firstPlayedAt)),
         lastPlayedAt: Math.max(0, number(record.lastPlayedAt)),
         lastChat: stem(record.lastChat),
@@ -141,6 +143,16 @@ export function recordFor(state, avatar, added = 0) {
     if (!Object.hasOwn(state.records, avatar)) state.records[avatar] = cleanRecord({ enteredAt: timestamp(added) });
     return state.records[avatar];
 }
+export function calibrateEntry(state, avatar, value, source = 'archive', now = Date.now()) {
+    const at = timestamp(value); if (!(at > 0 && at <= now)) return;
+    const record = recordFor(state, avatar);
+    if (record.enteredSource === 'import') return; // An explicitly observed import is stronger than an imported old chat.
+    record.entryEvidenceAt = record.entryEvidenceAt ? Math.min(record.entryEvidenceAt, at) : at;
+    if (!record.enteredAt || at < record.enteredAt) { record.enteredAt = at; record.enteredSource = source; record.enteredExact = false; }
+    state.chronicle.arrivals[avatar] = record.enteredAt;
+    state.chronicle.startedAt = Math.min(state.chronicle.startedAt, record.enteredAt);
+    for (const event of state.chronicle.promotions) if (event.id === avatar && event.at >= record.enteredAt) event.elapsed = event.at - record.enteredAt;
+}
 export function assignRank(state, avatar, target, demotion = 'unranked') {
     if (!state.ranks.some(r => r.id === target)) throw new Error('这个封位已不存在。');
     const incumbent = Object.entries(state.records).find(([id, r]) => id !== avatar && r.rankId === 'queen');
@@ -180,7 +192,7 @@ export function logAction(state, avatar, kind, at = Date.now(), chat = '') {
     if (kind === 'open') { r.openedAt = at; r.openCount++; if (chat) r.lastChat = stem(chat); }
     if (kind === 'play') {
         r.firstPlayedAt = r.firstPlayedAt ? Math.min(r.firstPlayedAt, at) : at;
-        r.lastPlayedAt = at;
+        r.lastPlayedAt = Math.max(r.lastPlayedAt, at);
         if (chat) r.lastChat = stem(chat);
     }
 }
@@ -191,10 +203,14 @@ export function entities(ctx, state, stats = {}) {
         const stat = stats[c.avatar] || {};
         const firstCandidates = [number(stat.user_msg_count) > 0 ? timestamp(stat.date_first_chat) : 0, r.firstPlayedAt].filter(t => t > 0 && t <= Date.now());
         const firstPlayed = firstCandidates.length ? Math.min(...firstCandidates) : 0;
-        // Never lock a mistaken "discovered today" value over an older native entry.
-        // Chat time describes companionship, not character import time.
-        const entryCandidates = [r.enteredAt, timestamp(c.date_added)].filter(t => t > 0 && t <= Date.now());
+        // create_date is persisted by native import; date_added is mutable file ctime.
+        const valid = value => value > 0 && value <= Date.now();
+        const created = timestamp(c.create_date), fileDate = timestamp(c.date_added);
+        const nativeEntry = valid(created) ? created : valid(fileDate) ? fileDate : 0;
+        const entryCandidates = [r.enteredAt, nativeEntry, r.enteredSource === 'import' ? 0 : r.entryEvidenceAt].filter(valid);
         if (entryCandidates.length) r.enteredAt = Math.min(...entryCandidates);
+        if (r.enteredSource !== 'import' && r.enteredAt === created && valid(created)) { r.enteredSource = 'native'; r.enteredExact = true; }
+        else if (!r.enteredSource && r.enteredAt === fileDate && valid(fileDate)) { r.enteredSource = 'file'; r.enteredExact = false; }
         if (r.enteredAt > 0) {
             state.chronicle.arrivals[c.avatar] = r.enteredAt;
             state.chronicle.startedAt = Math.min(state.chronicle.startedAt, r.enteredAt);
@@ -208,9 +224,15 @@ export function entities(ctx, state, stats = {}) {
             investment: Math.max(0, number(stat.user_msg_count)),
             played: number(stat.user_msg_count) > 0 || !!r.firstPlayedAt || !!r.lastPlayedAt,
             firstPlayed,
-            lastPlayed: Math.max(r.lastPlayedAt, timestamp(stat.date_last_chat)),
+            lastPlayed: r.lastPlayedAt > 0 && r.lastPlayedAt <= Date.now() ? r.lastPlayedAt : 0,
         };
     });
+}
+/** Only native message/generation timestamps are evidence of actual interaction. */
+export function interactionTimes(message, now = Date.now()) {
+    if (!message || message.is_system) return [];
+    const rows = message.is_user ? [message] : [message, ...(Array.isArray(message.swipe_info) ? message.swipe_info : [])];
+    return [...new Set(rows.flatMap(row => row && typeof row === 'object' ? (message.is_user ? [timestamp(row.send_date)] : [timestamp(row.send_date), timestamp(row.gen_started), timestamp(row.gen_finished)]) : []).filter(at => at > 0 && at <= now))].sort((a, b) => a - b);
 }
 /** Read only actual message dates, never infer first play from latest/file mtime. */
 export function interactionDates(chat, now = Date.now()) {
@@ -221,9 +243,9 @@ export function interactionDates(chat, now = Date.now()) {
         messageIndex++;
         if (!genuine) continue; // An automatically inserted opening is not play.
         played = true;
-        const at = timestamp(row.send_date) || timestamp(row.gen_started);
-        if (at <= 0 || at > now) continue;
-        first = first ? Math.min(first, at) : at; last = Math.max(last, at);
+        const times = interactionTimes(row, now);
+        if (!times.length) continue;
+        first = first ? Math.min(first, times[0]) : times[0]; last = Math.max(last, times[times.length - 1]);
     }
     return { first, last, played };
 }

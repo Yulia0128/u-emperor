@@ -12,7 +12,7 @@ export function periodFor(key, mode = 'month') {
     else { start = key.slice(0, 7) + '-01'; end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)).toISOString().slice(0, 10); }
     return { start, end, last: moveDay(end, -1), contains: value => value >= start && value < end };
 }
-export function newChronicle(now = Date.now()) { return { version: 1, startedAt: now, zone: Intl.DateTimeFormat().resolvedOptions().timeZone, days: {}, arrivals: {}, promotions: [], returns: [], seen: {}, gaps: [], pausedAt: 0 }; }
+export function newChronicle(now = Date.now()) { return { version: 1, startedAt: now, zone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai', days: {}, arrivals: {}, promotions: [], returns: [], seen: {}, gaps: [], pausedAt: 0 }; }
 export function cleanChronicle(raw) {
     const out = newChronicle(); if (!raw || typeof raw !== 'object') return out;
     if (raw.version !== 1) throw new Error('史册数据版本暂不支持，请先更新插件。');
@@ -30,13 +30,13 @@ export function cleanChronicle(raw) {
     for (const row of Array.isArray(raw.returns) ? raw.returns : []) if (row && safe(row.id) && row.at > 0 && row.absence >= 7 * DAY) out.returns.push({ id: row.id, at: count(row.at), absence: count(row.absence) });
     return out;
 }
-export function arrival(state, id, at = Date.now()) {
+export function arrival(state, id, at = Date.now(), source = 'import') {
     const book = state.chronicle; if (!book || !safe(id) || !(at > 0)) return;
     const record = state.records[id];
     const candidates = [book.arrivals[id], record?.enteredAt, at].filter(value => value > 0 && value <= Date.now());
     if (!candidates.length) return;
     book.arrivals[id] = Math.min(...candidates);
-    if (record) { record.enteredAt = book.arrivals[id]; record.enteredExact = true; }
+    if (record) { record.enteredAt = book.arrivals[id]; record.enteredExact = true; record.enteredSource = source; }
 }
 export const messageIdentity = (id, chat, index, stamp, user) => JSON.stringify([id, 'native-message', index, stamp || chat, user === true]);
 export function promotion(state, id, from, to, at = Date.now()) {
