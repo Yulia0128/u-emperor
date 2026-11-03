@@ -1,4 +1,5 @@
-export const VERSION = '0.6.4';
+import { newChronicle, cleanChronicle, promotion } from './chronicles.js';
+export const VERSION = '0.7.2';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -48,7 +49,7 @@ export function defaults() {
             { id: 'lady', name: '贵人', weight: 1 },
             { id: 'unranked', name: '未册封', weight: 0.5 },
             { id: 'cold', name: '冷宫', weight: 0 },
-        ], records: {}, archives: {}, mode: 'random', presentation: 'blind', drawTag: '', drawRank: '',
+        ], records: {}, archives: {}, chronicle: newChronicle(), mode: 'random', presentation: 'blind', drawTag: '', drawRank: '',
     };
 }
 export function discordUrl(value) {
@@ -74,6 +75,7 @@ function cleanRecord(input = {}) {
     return {
         rankId: text(record.rankId) || 'unranked', sourceUrl,
         enteredAt: Math.max(0, number(record.enteredAt)),
+        enteredExact: record.enteredExact === true,
         firstPlayedAt: Math.max(0, number(record.firstPlayedAt)),
         lastPlayedAt: Math.max(0, number(record.lastPlayedAt)),
         lastChat: stem(record.lastChat),
@@ -89,6 +91,7 @@ export function normalize(input, { strict = false } = {}) {
         return base;
     }
     if (input.schema !== undefined && input.schema !== 1) throw new Error('此备份的数据版本暂不支持，请先更新插件。');
+    base.chronicle = input.chronicle ? cleanChronicle(input.chronicle) : base.chronicle;
     if (strict && (!Array.isArray(input.ranks) || !input.records || typeof input.records !== 'object' || Array.isArray(input.records))) throw new Error('备份缺少封位或角色记录。');
     const ids = new Set();
     const ranks = (Array.isArray(input.ranks) ? input.ranks : base.ranks).filter(r => r && safeKey(r.id) && r.id.length < 100 && text(r.name).trim() && !ids.has(r.id) && ids.add(r.id)).slice(0, 40).map(r => ({ id: r.id, name: r.name.trim().slice(0, 30), weight: r.id === 'cold' ? 0 : clamp(r.weight ?? 1, 0.1, 100) }));
@@ -145,7 +148,7 @@ export function assignRank(state, avatar, target, demotion = 'unranked') {
         if (demotion === 'queen' || !state.ranks.some(r => r.id === demotion)) throw new Error('请选择原皇后的新封位。');
         incumbent[1].rankId = demotion;
     }
-    recordFor(state, avatar).rankId = target;
+    const record = recordFor(state, avatar); promotion(state, avatar, record.rankId, target); record.rankId = target;
 }
 export function removeRank(state, id) {
     if (['queen', 'unranked', 'cold'].includes(id)) throw new Error('皇后、未册封和冷宫可以改名，但不能删除。');
@@ -156,6 +159,12 @@ export function renameIdentity(state, oldAvatar, newAvatar) {
     if (!safeKey(oldAvatar) || !safeKey(newAvatar) || oldAvatar === newAvatar) return;
     if (Object.hasOwn(state.records, oldAvatar)) {
         state.records[newAvatar] = state.records[oldAvatar]; delete state.records[oldAvatar];
+    }
+    const book = state.chronicle;
+    if (book) {
+        if (Object.hasOwn(book.arrivals, oldAvatar)) { book.arrivals[newAvatar] = book.arrivals[oldAvatar]; delete book.arrivals[oldAvatar]; }
+        for (const day of Object.values(book.days)) if (Object.hasOwn(day, oldAvatar)) { day[newAvatar] = day[oldAvatar]; delete day[oldAvatar]; }
+        for (const row of [...book.promotions, ...book.returns, ...Object.values(book.seen)]) if (row.id === oldAvatar) row.id = newAvatar;
     }
     for (const [key, value] of Object.entries(state.archives)) {
         try {
@@ -183,7 +192,7 @@ export function entities(ctx, state, stats = {}) {
         const firstCandidates = [number(stat.user_msg_count) > 0 ? timestamp(stat.date_first_chat) : 0, r.firstPlayedAt].filter(t => t > 0 && t <= Date.now());
         const firstPlayed = firstCandidates.length ? Math.min(...firstCandidates) : 0;
         // File ctime can change on copy/replace. Never place entry after a known interaction.
-        const entryCandidates = [r.enteredAt, timestamp(c.date_added), firstPlayed].filter(t => t > 0 && t <= Date.now());
+        const entryCandidates = (r.enteredExact ? [r.enteredAt] : [r.enteredAt, timestamp(c.date_added), firstPlayed]).filter(t => t > 0 && t <= Date.now());
         if (entryCandidates.length) r.enteredAt = Math.min(...entryCandidates);
         const tags = [...new Set([...(ctx.tagMap?.[c.avatar] || []).map(id => tagNames.get(String(id))), ...(Array.isArray(c.data?.tags || c.tags) ? (c.data?.tags || c.tags) : [])].filter(t => typeof t === 'string' && t.trim()))];
         return {

@@ -2,6 +2,8 @@ import { KEY, VERSION, MODES, entities, excerpt, recordFor, assignRank, removeRa
 import { saveFile, fullBackup } from './backup.js';
 import { createId } from './ids.js';
 import { bindCarousel } from './carousel.js';
+import { arrival } from './chronicles.js';
+import { openChronicle } from './chronicle-ui.js';
 
 const asset = name => globalThis.__UE_PREVIEW_ASSETS__?.[name] || new URL(`./assets/${name}`, import.meta.url).href;
 const nameFace = asset('plaque-name-face.png');
@@ -167,7 +169,7 @@ export class EmperorUI {
         const refresh = this.button('↻', async () => { await this.host.refresh(); await draw(); }, 'ue-icon', '刷新角色与存档信息');
         const drawButton = this.button('翻牌', () => this.drawDialog(), 'ue-primary ue-draw-entry');
         const back = this.button('‹ 返回金字塔', () => navigate('all'), 'ue-subtle ue-back-gallery'); back.hidden = true;
-        top.append(back, count, refresh, drawButton); const groups = node('div', 'ue-groups'); main.append(top, groups); layout.append(filters, main); root.append(header, layout);
+        top.append(back, count, refresh, this.button('史册', () => openChronicle(this, node), 'ue-subtle ue-history-entry'), drawButton); const groups = node('div', 'ue-groups'); main.append(top, groups); layout.append(filters, main); root.append(header, layout);
         let revision = 0, timer;
         const draw = async () => {
             const id = ++revision; const all = await this.all();
@@ -248,6 +250,9 @@ export class EmperorUI {
         const top = node('div', 'ue-detail-summary'); top.append(this.cover(entity));
         const intro = node('div'); const companion = node('p', '', this.companion(entity)); const entered = node('p', 'ue-muted', `入宫于 ${dateLabel(entity.record.enteredAt)}`);
         intro.append(node('span', 'ue-badge', entity.rank.name), companion, entered);
+        const days = Object.values(this.state.chronicle.days).filter(rows => Object.hasOwn(rows, avatar)).length;
+        intro.append(node('p', 'ue-muted', `已记录实际陪伴 ${days} 天`));
+        if (!entity.record.enteredExact) intro.append(node('small', 'ue-muted', '入宫日期为历史参考，非确切首次导入日'));
         const historyJob = this.host.historyJobs?.get(avatar);
         historyJob?.then(async () => { if (!dialog.open) return; const latest = (await this.all()).find(e => e.id === avatar); if (latest && dialog.open) { companion.textContent = this.companion(latest); entered.textContent = `入宫于 ${dateLabel(latest.record.enteredAt)}`; } }).catch(() => {});
         const actions = node('div', 'ue-actions'); actions.append(this.button('▷ 继续上次', () => this.continue(entity), 'ue-primary'), this.button('开启新故事', () => this.fresh(entity)));
@@ -403,7 +408,7 @@ export class EmperorUI {
                     for (const item of file.files) { if (completedFiles.has(item)) continue; status.textContent = `正在导入：${item.name}`; const avatar = await this.host.importFile(item); completedFiles.set(item, avatar); imported.push(avatar); }
                 }
             } catch (e) { status.textContent = `已导入 ${imported.length} 张。${e.message}`; throw e; }
-            finally { for (const avatar of imported) recordFor(this.state, avatar, Date.now()); this.save(); if (imported.length) await this.redraw(); }
+            finally { for (const avatar of imported) { recordFor(this.state, avatar, Date.now()); arrival(this.state, avatar); } this.save(); if (imported.length) await this.redraw(); }
             dialog.close();
             if (imported.length === 1) await this.registration(imported[0]);
             else this.notify(`已导入 ${imported.length} 张角色卡，默认为未册封，可逐张登记。`);

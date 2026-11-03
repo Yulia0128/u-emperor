@@ -1,5 +1,15 @@
 # 酒馆接口来源与兼容目标
 
+0.7.2 仅改变自有日历浮层：复用一个日历内绝对定位节点，通过透明度过渡切换；异步选择带序号取消，关闭时清理淡出等待和窗口 resize 监听。角色消息、统计与原生 API 依赖不变。DOM 状态播报与日期按钮 aria-describedby 关联，减少动态效果即时切换；移动端坐标按日历边界限制。未新增原生弹窗或全局点击监听。
+
+0.7.1 未新增统计接口；总Token继续合计已有的用户和角色消息 token_count。删除覆盖楼层说明，但保留缺失破折号与部分合计 ≥，不把旧值改称输出 Token。日期点击仅读取当天聚合数据，不下载聊天。语录使用 textContent 替换字段，分类名称中的 HTML 不执行。
+
+云端保存已核对同一官方 1.15.0 提交的 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) `saveSettings` 将 extension_settings 放入完整 payload，POST `/api/settings/save`；[settings.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/settings.js) save 将整份设置写入 request.user.directories.root 的 SETTINGS_FILE，get 读回该账号设置。插件仍调用 ctx.saveSettingsDebounced，未新增 localStorage 作为真实环境持久化来源。单服务器同账号重新加载可取得已保存设置，但此路径没有史册多客户端实时合并，不能宣称多个同时打开的旧页面完全同步。来源置信度 high（固定提交），真实跨设备运行待验收。
+
+0.7.0 史册沿用官方 1.15.0 同一提交的 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) `MESSAGE_SENT(index)`、`MESSAGE_RECEIVED(index,type)` 及 [events.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/events.js) 的事件常量。原生启用消息 token 计数时把结果写入 `message.extra.token_count`；流式 finish 与非流式消息保存路径在 MESSAGE_RECEIVED 前完成计数。此值是消息 token 计数，不能表示含上下文／世界书／提示词／重试的 API 总消耗。缺失时不补算，不调用分词和模型接口，界面显示覆盖楼层。
+
+史册以固定记录时区和纯日期边界划分周一至周日、自然月、自然年，不按 24 小时硬除天数跨夏令时。只在实时消息事件记录新增楼层、实际陪伴；CHAT_CHANGED 建立当前聊天已有对象基线，排除系统／首条自动开场／重抽／续写，并用角色、存档、消息位置与发送日期去重。原生 CHARACTER_PAGE_LOADED／CHARACTER_DUPLICATED 后对角色列表新增身份做入宫发现，插件导入入口也显式登记；首次加载已有角色不算新人。改名迁移统计，替换同身份不重入宫。未知旧导入时间不用于晋升速度评选。无需新增后端请求，所有史册数据在 schema 1 管理备份中保存；不修改原生消息。来源置信度 high，真实酒馆事件和不同生成模式仍待验收。
+
 0.6.4 将编辑器范围收窄到原生 `description`：一个文本框，保存载荷只有 `avatar`、`description`、`data.description`。仍沿用下述已核对的 1.15.0 merge-attributes 接口、保存前基线核对与保存后读取验证，没有新增原生依赖。性格、场景、示例对话及作者说明不由该编辑器修改。
 
 0.6.3 纠正事件来源：同一 1.15.0 提交 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) 的 `$('html').on('touchstart mousedown', …)` 关闭未固定抽屉，触发时机早于 click。之前的模拟用 click，不能覆盖这个缺陷。现在仅在插件自己的根节点和 dialog 停止 pointerdown／mousedown／touchstart／click 冒泡，不取消默认行为，输入、滚动、选择和按钮继续正常；插件外部操作仍交由酒馆处理。模拟检查改用 html touchstart／mousedown 并兼测 click，覆盖抽屉搜索、标签、分类、关闭／遮罩、设置、人设编辑与保存。来源置信度 high，真实用户环境待验收。

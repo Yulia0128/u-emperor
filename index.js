@@ -2,11 +2,20 @@ import { KEY, normalize, entities, recordFor, logAction, renameIdentity, interac
 import { TavernHost } from './host.js';
 import { EmperorUI, node } from './ui.js';
 import { NativeCharacterPanel } from './native-panel.js';
+import { activity, arrival } from './chronicles.js';
 
 let host, ui, disposers = [], home, welcome, observer, frame, ready = false;
 let enabled = false;
 let generation = 0;
 let nativePanel;
+let knownAvatars = new Set(), baselineMessages = new WeakSet();
+function primeMessages() { baselineMessages = new WeakSet((host.ctx.chat || []).filter(m => m && typeof m === 'object')); }
+function discoverArrivals() {
+    for (const c of host.ctx.characters || []) if (c.avatar && c.avatar !== 'none' && !knownAvatars.has(c.avatar)) {
+        knownAvatars.add(c.avatar); recordFor(ui.state, c.avatar, Date.now()); if (ui.state.enabled) arrival(ui.state, c.avatar);
+    }
+    ui.save();
+}
 function selected() { return host.ctx.characterId != null || host.ctx.groupId != null; }
 function clearHome() {
     if (home) { home.dispose(); home.root.parentElement?.remove(); home = null; }
@@ -40,6 +49,9 @@ function controls() {
         const label = node('label', 'checkbox_label'); label.htmlFor = toggle.id; label.append(toggle, node('span', '', '启动插件'));
         toggle.addEventListener('change', () => {
             ui.state.enabled = toggle.checked; ui.save();
+            if (!toggle.checked) ui.state.chronicle.pausedAt ||= Date.now();
+            else if (ui.state.chronicle.pausedAt) { ui.state.chronicle.gaps.push({ start: ui.state.chronicle.pausedAt, end: Date.now() }); ui.state.chronicle.pausedAt = 0; }
+            primeMessages(); ui.save();
             if (!toggle.checked) ui.closeAll();
             else ui.historyJobs.clear();
             controls(); reconcileHome();
@@ -61,6 +73,10 @@ function trackPlay(index, type) {
     const avatar = ctx.characters?.[ctx.characterId]?.avatar;
     if (!avatar) return;
     const r = recordFor(ui.state, avatar);
+    const messageKey = JSON.stringify([avatar, ctx.getCurrentChatId(), Number(index), message.send_date || message.gen_started || 'undated']);
+    const newFloor = !baselineMessages.has(message) && !['swipe', 'continue', 'append', 'appendFinal'].includes(type);
+    activity(ui.state, avatar, { key: messageKey, previous: r.lastPlayedAt, tokens: message.extra?.token_count, newFloor });
+    baselineMessages.add(message);
     // Current message dates and background archive reads recover first interaction.
     // Native frontend stats may start their clock at an automatically inserted greeting.
     const dates = interactionDates(ctx.chat);
@@ -78,7 +94,10 @@ export async function onEnable() {
     const backup = host.ctx.extensionSettings[KEY];
     try { host.ctx.extensionSettings[KEY] = normalize(backup); }
     catch (e) { enabled = false; console.error('U皇万岁：管理数据版本不兼容，未覆盖原数据。', e.message); return; }
-    entities(host.ctx, host.ctx.extensionSettings[KEY]); host.save();
+    const restored = host.ctx.extensionSettings[KEY];
+    if (restored.enabled && restored.chronicle.pausedAt) { restored.chronicle.gaps.push({ start: restored.chronicle.pausedAt, end: Date.now() }); restored.chronicle.pausedAt = 0; }
+    entities(host.ctx, restored); host.save();
+    knownAvatars = new Set((host.ctx.characters || []).map(c => c.avatar)); primeMessages();
     ui = new EmperorUI(host); ui.onHomePreference = scheduleHome; enabled = true;
     nativePanel = new NativeCharacterPanel(ui);
     ui.onNativeEntry = () => nativePanel.showNative();
@@ -89,9 +108,10 @@ export async function onEnable() {
         if (!observer && document.getElementById('chat')) { observer = new MutationObserver(scheduleHome); observer.observe(document.getElementById('chat'), { childList: true }); }
     };
     disposers.push(host.on('APP_READY', start));
-    disposers.push(host.on('CHAT_CHANGED', () => { controls(); scheduleHome(); }));
+    disposers.push(host.on('CHAT_CHANGED', () => { primeMessages(); controls(); scheduleHome(); }));
     disposers.push(host.on('MESSAGE_SENT', trackPlay), host.on('MESSAGE_RECEIVED', trackPlay));
-    disposers.push(host.on('CHARACTER_RENAMED', (oldAvatar, newAvatar) => { renameIdentity(ui.state, oldAvatar, newAvatar); ui.save(); host.invalidate(); ui.redraw(); }));
+    disposers.push(host.on('CHARACTER_RENAMED', (oldAvatar, newAvatar) => { knownAvatars.delete(oldAvatar); knownAvatars.add(newAvatar); renameIdentity(ui.state, oldAvatar, newAvatar); ui.save(); host.invalidate(); ui.redraw(); }));
+    disposers.push(host.on('CHARACTER_PAGE_LOADED', discoverArrivals), host.on('CHARACTER_DUPLICATED', discoverArrivals));
     for (const event of ['CHARACTER_EDITED', 'CHARACTER_DELETED', 'CHARACTER_DUPLICATED', 'CHAT_CREATED', 'CHAT_DELETED', 'CHARACTER_PAGE_LOADED']) disposers.push(host.on(event, () => { host.invalidate(); ui.redraw(); scheduleHome(); }));
     // Extension activation can occur after APP_READY. Current context is then immediately usable.
     start();
@@ -99,6 +119,7 @@ export async function onEnable() {
 export function onDisable() {
     generation++;
     enabled = false; ready = false;
+    if (ui && host) { ui.state.chronicle.pausedAt ||= Date.now(); ui.save(); }
     for (const dispose of disposers.splice(0)) dispose();
     observer?.disconnect(); observer = null;
     if (frame) cancelAnimationFrame(frame); frame = null;
