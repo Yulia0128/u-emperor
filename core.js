@@ -1,10 +1,10 @@
-export const VERSION = '0.6.2';
+export const VERSION = '0.6.4';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
     ['random', '完全随机', '所有非冷宫角色，每张牌机会相同。'],
-    ['devoted', '情有独钟', '仅按妃位权重抽取，高位更容易被翻到。'],
-    ['fickle', '喜新厌旧', '妃位权重取倒数，低位更容易被翻到。'],
+    ['devoted', '情有独钟', '仅按封位权重抽取，高位更容易被翻到。'],
+    ['fickle', '喜新厌旧', '封位权重取倒数，低位更容易被翻到。'],
     ['rekindle', '旧情复燃', '历史聊天投入为主，久未游玩时间为辅。仅抽玩过的角色。'],
 ]);
 const safeKey = key => typeof key === 'string' && !['__proto__', 'constructor', 'prototype'].includes(key);
@@ -27,16 +27,11 @@ export function timestamp(v) {
     return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime() : 0;
 }
 export const RANK_PRESETS = Object.freeze({
-    history: { queen: '皇后', imperial: '皇贵妃', noble: '贵妃', consort: '妃', concubine: '嫔', lady: '贵人', attendant: '常在' },
-    empress: { queen: '帝后', imperial: '皇贵君', noble: '贵君', consort: '文君', concubine: '侧君', lady: '贵卿', attendant: '侍君' },
+    history: { queen: '皇后', noble: '贵妃', consort: '妃', concubine: '嫔', lady: '贵人' },
+    empress: { queen: '帝后', noble: '贵君', consort: '文君', concubine: '侧君', lady: '侍君' },
 });
 export function applyRankPreset(state, type) {
     if (!Object.hasOwn(RANK_PRESETS, type)) throw new Error('未知的默认分类类型。');
-    if (type === 'empress' && !state.ranks.some(r => r.id === 'attendant')) {
-        if (state.ranks.length >= 40) throw new Error('妃位已达上限，请先腾出一个位置以添加侍君。');
-        const unranked = state.ranks.findIndex(r => r.id === 'unranked');
-        state.ranks.splice(unranked, 0, { id: 'attendant', name: RANK_PRESETS.empress.attendant, weight: 0.75 });
-    }
     for (const rank of state.ranks) {
         if (Object.values(RANK_PRESETS).some(preset => preset[rank.id] === rank.name)) rank.name = RANK_PRESETS[type][rank.id];
     }
@@ -44,11 +39,10 @@ export function applyRankPreset(state, type) {
 }
 export function defaults() {
     return {
-        schema: 1, enabled: true, homepage: false, replaceCharacters: true, rankPreset: 'history',
+        schema: 1, rankDefaultsVersion: 2, enabled: true, homepage: false, replaceCharacters: true, rankPreset: 'history',
         ranks: [
             { id: 'queen', name: '皇后', weight: 8 },
-            { id: 'imperial', name: '皇贵妃', weight: 6 },
-            { id: 'noble', name: '贵妃', weight: 4 },
+            { id: 'noble', name: '贵妃', weight: 5 },
             { id: 'consort', name: '妃', weight: 3 },
             { id: 'concubine', name: '嫔', weight: 2 },
             { id: 'lady', name: '贵人', weight: 1 },
@@ -95,16 +89,28 @@ export function normalize(input, { strict = false } = {}) {
         return base;
     }
     if (input.schema !== undefined && input.schema !== 1) throw new Error('此备份的数据版本暂不支持，请先更新插件。');
-    if (strict && (!Array.isArray(input.ranks) || !input.records || typeof input.records !== 'object' || Array.isArray(input.records))) throw new Error('备份缺少妃位或角色记录。');
+    if (strict && (!Array.isArray(input.ranks) || !input.records || typeof input.records !== 'object' || Array.isArray(input.records))) throw new Error('备份缺少封位或角色记录。');
     const ids = new Set();
     const ranks = (Array.isArray(input.ranks) ? input.ranks : base.ranks).filter(r => r && safeKey(r.id) && r.id.length < 100 && text(r.name).trim() && !ids.has(r.id) && ids.add(r.id)).slice(0, 40).map(r => ({ id: r.id, name: r.name.trim().slice(0, 30), weight: r.id === 'cold' ? 0 : clamp(r.weight ?? 1, 0.1, 100) }));
     for (const id of ['queen', 'unranked', 'cold']) if (!ranks.some(r => r.id === id)) ranks.push(base.ranks.find(r => r.id === id));
+    // Collapse retired stock ranks only once; custom-named ranks remain user-owned.
+    const retired = new Map();
+    if (input.rankDefaultsVersion !== 2) {
+        for (const [id, names, target] of [['imperial', ['皇贵妃', '皇贵君'], 'noble'], ['attendant', ['常在', '侍君'], 'lady']]) {
+            const index = ranks.findIndex(r => r.id === id && names.includes(r.name));
+            if (index < 0) continue;
+            retired.set(id, ranks.some(r => r.id === target) ? target : 'unranked'); ranks.splice(index, 1);
+        }
+        const lady = ranks.find(r => r.id === 'lady' && r.name === '贵卿'); if (lady) lady.name = '侍君';
+        const noble = ranks.find(r => r.id === 'noble' && ['贵妃', '贵君'].includes(r.name) && r.weight === 4); if (noble) noble.weight = 5;
+    }
     const valid = new Set(ranks.map(r => r.id));
-    base.ranks = [ranks.find(r => r.id === 'queen'), ...ranks.filter(r => !['queen', 'cold'].includes(r.id)), ranks.find(r => r.id === 'cold')];
+    base.ranks = [ranks.find(r => r.id === 'queen'), ...ranks.filter(r => !['queen', 'unranked', 'cold'].includes(r.id)), ranks.find(r => r.id === 'unranked'), ranks.find(r => r.id === 'cold')];
     let queen = false;
     for (const [key, value] of Object.entries(input.records || {})) {
         if (!safeKey(key) || key.length > 500) continue;
         const record = cleanRecord(value);
+        if (retired.has(record.rankId)) record.rankId = retired.get(record.rankId);
         if (!valid.has(record.rankId)) record.rankId = 'unranked';
         if (record.rankId === 'queen') {
             if (queen && strict) throw new Error('备份中存在多位皇后，未导入。');
@@ -123,7 +129,8 @@ export function normalize(input, { strict = false } = {}) {
     base.mode = MODES.some(([id]) => id === input.mode) ? input.mode : 'random';
     base.presentation = input.presentation === 'named' ? 'named' : 'blind';
     base.drawTag = text(input.drawTag).slice(0, 100);
-    base.drawRank = valid.has(input.drawRank) && input.drawRank !== 'cold' ? input.drawRank : '';
+    const drawRank = retired.get(input.drawRank) || input.drawRank;
+    base.drawRank = valid.has(drawRank) && drawRank !== 'cold' ? drawRank : '';
     return base;
 }
 export function recordFor(state, avatar, added = 0) {
@@ -132,7 +139,7 @@ export function recordFor(state, avatar, added = 0) {
     return state.records[avatar];
 }
 export function assignRank(state, avatar, target, demotion = 'unranked') {
-    if (!state.ranks.some(r => r.id === target)) throw new Error('这个妃位已不存在。');
+    if (!state.ranks.some(r => r.id === target)) throw new Error('这个封位已不存在。');
     const incumbent = Object.entries(state.records).find(([id, r]) => id !== avatar && r.rankId === 'queen');
     if (target === 'queen' && incumbent) {
         if (demotion === 'queen' || !state.ranks.some(r => r.id === demotion)) throw new Error('请选择原皇后的新封位。');
@@ -244,5 +251,5 @@ export function readBackup(value) {
 export function dateLabel(value) { return value ? new Date(value).toLocaleDateString('zh-CN') : '未知'; }
 export function companionLabel(first, now = Date.now(), played = false) {
     const day = value => { const date = new Date(value); return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()); };
-    return first > 0 ? `相伴 ${Math.max(1, Math.round((day(now) - day(first)) / DAY) + 1)} 天` : played ? '初见时间待补全' : '尚未初见';
+    return first > 0 ? `入宫 ${Math.max(1, Math.round((day(now) - day(first)) / DAY) + 1)} 天` : played ? '入宫时间待补全' : '入宫时间未知';
 }

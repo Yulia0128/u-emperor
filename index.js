@@ -29,7 +29,13 @@ function controls() {
     document.getElementById('ue-open')?.remove();
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (settings && !document.getElementById('ue-settings')) {
-        const panel = node('div'); panel.id = 'ue-settings';
+        const panel = node('div', 'inline-drawer'); panel.id = 'ue-settings';
+        const header = node('div', 'inline-drawer-header inline-drawer-toggle'); header.tabIndex = 0; header.setAttribute('role', 'button'); header.setAttribute('aria-expanded', 'false');
+        const icon = node('div', 'inline-drawer-icon fa-solid fa-circle-chevron-down down'); icon.setAttribute('aria-hidden', 'true');
+        header.append(node('b', '', 'U皇万岁'), icon);
+        header.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); header.click(); } });
+        header.addEventListener('click', () => queueMicrotask(() => header.setAttribute('aria-expanded', String(icon.classList.contains('up')))));
+        const content = node('div', 'inline-drawer-content'); content.style.display = 'none';
         const toggle = node('input'); toggle.type = 'checkbox'; toggle.id = 'ue-enabled';
         const label = node('label', 'checkbox_label'); label.htmlFor = toggle.id; label.append(toggle, node('span', '', '启动插件'));
         toggle.addEventListener('change', () => {
@@ -40,8 +46,8 @@ function controls() {
         });
         const open = node('button', 'menu_button', '打开管理器'); open.type = 'button'; open.id = 'ue-open-manager';
         open.addEventListener('click', () => { if (ui.state.enabled) ui.open(); });
-        const actions = node('div', 'flex-container flexGap10'); actions.append(label, open);
-        panel.append(node('div', '', 'U皇万岁'), actions); settings.append(panel);
+        const actions = node('div', 'ue-extension-actions'); actions.append(label, open); content.append(actions);
+        panel.append(header, content); settings.append(panel);
     }
     const toggle = document.getElementById('ue-enabled'); if (toggle) toggle.checked = ui.state.enabled;
     const open = document.getElementById('ue-open-manager'); if (open) open.disabled = !ui.state.enabled;

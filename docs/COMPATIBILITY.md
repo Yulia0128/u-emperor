@@ -1,16 +1,22 @@
 # 酒馆接口来源与兼容目标
 
+0.6.4 将编辑器范围收窄到原生 `description`：一个文本框，保存载荷只有 `avatar`、`description`、`data.description`。仍沿用下述已核对的 1.15.0 merge-attributes 接口、保存前基线核对与保存后读取验证，没有新增原生依赖。性格、场景、示例对话及作者说明不由该编辑器修改。
+
+0.6.3 纠正事件来源：同一 1.15.0 提交 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) 的 `$('html').on('touchstart mousedown', …)` 关闭未固定抽屉，触发时机早于 click。之前的模拟用 click，不能覆盖这个缺陷。现在仅在插件自己的根节点和 dialog 停止 pointerdown／mousedown／touchstart／click 冒泡，不取消默认行为，输入、滚动、选择和按钮继续正常；插件外部操作仍交由酒馆处理。模拟检查改用 html touchstart／mousedown 并兼测 click，覆盖抽屉搜索、标签、分类、关闭／遮罩、设置、人设编辑与保存。来源置信度 high，真实用户环境待验收。
+
+扩展设置使用同一源码的 `.inline-drawer-toggle` 委托处理器和 `.inline-drawer`、`.inline-drawer-header`、`.inline-drawer-icon`、`.inline-drawer-content` 结构，折叠由酒馆原生处理，默认收起。插件只添加 scoped 排版，不引入自身黑金字体和按钮样式。封位精简迁移沿用 schema 1，增加 `rankDefaultsVersion: 2`，旧默认分类中的角色转到对应保留分类；自定义名称的旧分类保留。备份恢复同样走规范化并确保未册封、冷宫最后。
+
 0.6.0 的内置人设编辑针对同一 1.15.0 源码基线：`POST /api/characters/merge-attributes` 依据 [characters.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/characters.js) 的 merge-attributes 路由，以及 script.js 的 updateRemoteChatName 调用形状。载荷以 `avatar` 指定文件，只合并用户实际改动的 description/personality/scenario/mes_example/creator_notes；同时更新 V1 对应字段与 data 中字段，作者说明的 V1 对应 creatorcomment。服务端 deepMerge 保留未提交的字段并进行原生卡验证，成功返回文本 OK。插件先读 get 检查基线，再发一次合并请求，随后 get 验证并刷新角色列表；不切换当前角色，不发送聊天保存请求。并发检查是客户端读取后核对，原生接口没有事务版本号，因此不宣称与外部同时编辑完全无竞态。单元测试覆盖未知扩展／世界书保留、聊天标识不变、文本响应、冲突及失败；模拟宿主验证 UI 到适配器完整请求。来源置信度 high，真实酒馆保存仍待验收。
 
 0.6.0 移除聊天正文预览，并停止首页和面板重绘时的整库 JSONL 下载。历史补读仅针对当前打开且缺少已记录初见时间的角色；存档页保留原生列表及消息数读取。未改变原生聊天消息或备份快照格式。首页展示默认关闭，显式保存的设置保留。
 
 0.5.0 的金字塔、横排滚动和分类完整页仅修改插件自有前端。分类页与画廊共享同一角色集合和筛选条件，当前分类、滚动位置不写入角色或聊天。carousel.js 的 DOM 监听、ResizeObserver、IntersectionObserver 与动画帧随所属界面销毁；观察器不可用时仍保留原生滚动与按钮。没有新增酒馆 API 依赖，没有调整 schema 1 管理数据与皇后／冷宫规则。测试证据仍为离线和模拟宿主，真实酒馆的原生拖动／主题叠加／手机触摸需在目标环境验收。
 
-0.4.0 的事件隔离依据同一 1.15.0 提交的 [public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/script.js) 文档 click 处理器，以及 [RossAscends-mods.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/public/scripts/RossAscends-mods.js) 的 Escape 处理器。原生把不在 `.openDrawer` 内且非原生 popup 的点击视作面板外部点击；插件弹窗在 body 的独立层，因此只在插件自有根节点与 dialog 内停止 click 冒泡，Escape 也仅在自有界面内隔离，保留浏览器关闭当前 dialog 的默认行为。没有改写原生监听器或用户固定面板偏好。旧版在带该关闭逻辑的模拟宿主中可复现，新版验证同一路径通过；真实用户酒馆仍待验收。
+0.4.0 的事件隔离只处理了 click 与 Escape，没有覆盖 1.15.0 html touchstart／mousedown 处理器，旧版模拟也漏掉了这个时机；这项不足在 0.6.3 修正。插件弹窗在 body 的独立层，自有根节点与 dialog 承担事件隔离，保留浏览器关闭当前 dialog 的默认行为，不改写原生监听器或用户固定面板偏好。
 
 时间补读依据同一提交的 `stats.js`（后端及前端）、`characters.js` 与 `chats.js`：原生前端的 first_chat 可能随首次记入统计的消息初始化，后端重建也可能因历史日期解析失败留下 0／未来哨兵值；原生卡片 date_added 来自文件 ctime，复制或替换可能变动。插件通过已使用的 `/api/characters/chats`、`/api/chats/get` 只读消息 `send_date`，补充最早及最近实际互动；忽略自动开场与系统消息，文件修改时间不当成初见。并行上限为两个角色，单角色逐档读取；不调用 stats recreate/update，不改写用户聊天，不复算楼层。来源置信度 high（固定版本源码），运行置信度 medium（单元与模拟宿主），真实环境待验。
 
-0.3.1 浏览器兼容修复：插件不再依赖 `crypto.randomUUID()` 生成 DOM 或妃位标识。[该接口具有安全上下文限制](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/randomUUID)，不能假定 HTTP 局域网／IP 访问时可用。本地标识生成器不覆盖全局 crypto、不用于安全令牌，已有角色及妃位标识原样保留。已在缺少该方法的 Chrome 模拟环境验证，仍不等同于用户真实酒馆的完整验收。
+0.3.1 浏览器兼容修复：插件不再依赖 `crypto.randomUUID()` 生成 DOM 或封位标识。[该接口具有安全上下文限制](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/randomUUID)，不能假定 HTTP 局域网／IP 访问时可用。本地标识生成器不覆盖全局 crypto、不用于安全令牌，已有角色及封位标识原样保留。已在缺少该方法的 Chrome 模拟环境验证，仍不等同于用户真实酒馆的完整验收。
 
 目标：官方 SillyTavern **1.15.0**；源码基线提交 `1c0e7ea9556afcc3ae55c888287dff67a6aa42fc`。此前也只读比较过 1.16.0 的角色选择、聊天切换和替换入口。未对所有中间版本或第三方分支作兼容承诺。
 

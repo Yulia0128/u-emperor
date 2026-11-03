@@ -18,7 +18,14 @@
 .ue-button.ue-category-entry{width:36px;padding:0;background:transparent;border-color:transparent;flex-shrink:0;letter-spacing:0}
 .ue-header>.ue-input{flex:1;min-width:180px;max-width:460px;margin-left:auto}.ue-tools{display:flex;align-items:center;gap:12px;margin-left:auto;flex-shrink:0}
 .ue-layout{display:block;flex:1;min-height:0;overflow:hidden}.ue-layout>.ue-drawer-filters{display:none}
-.ue-main{height:100%;overflow-y:auto;overscroll-behavior:contain;padding:0 28px 44px;scroll-behavior:auto;scrollbar-color:#756342 #141517;scrollbar-width:thin}
+.ue-main{height:100%;overflow-y:auto;overscroll-behavior:contain;padding:0 28px 44px;scroll-behavior:auto;scrollbar-gutter:stable}
+.ue-app .ue-main,.ue-dialog .ue-dialog-body,.ue-dialog .ue-sidebar,.ue-dialog .ue-draw-outcome{scrollbar-color:#756342 #141517;scrollbar-width:thin}
+.ue-app .ue-main::-webkit-scrollbar,.ue-dialog .ue-dialog-body::-webkit-scrollbar,.ue-dialog .ue-sidebar::-webkit-scrollbar,.ue-dialog .ue-draw-outcome::-webkit-scrollbar{width:6px;height:6px}
+.ue-app .ue-main::-webkit-scrollbar-track,.ue-dialog .ue-dialog-body::-webkit-scrollbar-track,.ue-dialog .ue-sidebar::-webkit-scrollbar-track,.ue-dialog .ue-draw-outcome::-webkit-scrollbar-track{background:#141517}
+.ue-app .ue-main::-webkit-scrollbar-thumb,.ue-dialog .ue-dialog-body::-webkit-scrollbar-thumb,.ue-dialog .ue-sidebar::-webkit-scrollbar-thumb,.ue-dialog .ue-draw-outcome::-webkit-scrollbar-thumb{background:#756342;border-radius:9px;border:1px solid #141517;box-shadow:none}
+.ue-app .ue-main::-webkit-scrollbar-thumb:hover,.ue-dialog .ue-dialog-body::-webkit-scrollbar-thumb:hover,.ue-dialog .ue-sidebar::-webkit-scrollbar-thumb:hover,.ue-dialog .ue-draw-outcome::-webkit-scrollbar-thumb:hover{background:#b09765}
+/* Match the content's reserved scrollbar gutter at every container width. */
+.ue-header{padding-right:calc(28px + var(--ue-scrollbar-gutter,0px))}
 .ue-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:16px 0;position:sticky;top:0;z-index:3;background-color:var(--ue-bg);border-bottom:1px solid var(--ue-border)}
 .ue-toolbar>.ue-muted{font-size:12px;margin-right:auto;letter-spacing:.1em}.ue-tag-filter{width:180px!important;max-width:220px}
 .ue-rank-section{scroll-margin-top:84px;padding-top:32px}.ue-section-heading{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:20px}.ue-section-heading h2{letter-spacing:.25em;font-size:17px;font-weight:400}
@@ -100,6 +107,11 @@
 .ue-world-row>strong{flex:1;overflow-wrap:anywhere;font-weight:400}.ue-world-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .ue-replacement-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.ue-replacement-row>span{overflow-wrap:anywhere}
 .ue-dialog .ue-profile-text{height:auto;min-height:130px;resize:vertical;white-space:pre-wrap;line-height:1.7;letter-spacing:0}
+.ue-profile-editor-actions{position:sticky;bottom:-32px;margin-bottom:-32px;padding:12px 0 20px;background:var(--ue-panel);z-index:1}
+/* Only layout is scoped here; extension settings use the host's normal typography and controls. */
+#ue-settings .ue-extension-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0}
+#ue-settings .ue-extension-actions>.checkbox_label{display:flex;align-items:center;gap:8px;margin:0;flex:0 0 auto}
+#ue-settings #ue-open-manager{width:max-content;min-width:max-content;flex:0 0 auto;white-space:nowrap;margin:0}
 .ue-dialog select.ue-input{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23c9a96e' stroke-width='1.3'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;background-color:#101113}
 .ue-dialog summary{list-style:none;display:flex;align-items:baseline;gap:12px}.ue-dialog summary::-webkit-details-marker{display:none}.ue-dialog summary::marker{content:""}
 .ue-dialog summary::before{content:"";display:inline-block;width:6px;height:6px;flex:0 0 6px;border-right:1px solid var(--ue-gold);border-bottom:1px solid var(--ue-gold);transform:rotate(-45deg);transition:transform 180ms ease-in-out}
@@ -144,16 +156,17 @@
 #ue-character-mount{width:100%;height:min(88dvh,1050px);min-height:0;flex:1;overflow:hidden;display:flex}#ue-character-mount .ue-native-app{height:100%;border:0;border-radius:0}.ue-native-return{margin:10px;flex-shrink:0}
 @container ue-surface (max-width:680px){
   .ue-main{--ue-card-width:96px;--ue-card-gap:12px}
-  .ue-header{padding:14px 16px;gap:12px}.ue-header h1{font-size:18px}.ue-tools{gap:6px}.ue-tools .ue-subtle{font-size:10px;padding:0 8px;letter-spacing:.04em}
+  .ue-header{padding:14px calc(16px + var(--ue-scrollbar-gutter,0px)) 14px 16px;gap:12px}.ue-header h1{font-size:18px}.ue-tools{gap:6px}.ue-tools .ue-subtle{font-size:10px;padding:0 8px;letter-spacing:.04em}
   .ue-main{padding:0 16px 32px}.ue-toolbar{gap:10px;padding:12px 0}.ue-toolbar>.ue-muted{white-space:nowrap;font-size:10px}
   .ue-card-copy{padding:7px 32px 7px 7px}.ue-card-copy h3{font-size:12px}.ue-card-meta{font-size:9px}.ue-card-actions .ue-button{right:4px;width:26px;min-height:26px;height:26px;font-size:17px;top:auto;bottom:5px}.ue-rank-section{scroll-margin-top:78px}.ue-section-heading h2{font-size:16px}.ue-gallery-tier{padding-top:6px}
 }
 @container ue-surface (max-width:370px){
-  .ue-header{padding:12px;gap:8px}.ue-header h1{font-size:16px}.ue-crown{width:24px;height:22px}.ue-brand{gap:6px}.ue-tools{gap:5px}.ue-tools .ue-subtle{max-width:52px;white-space:normal;font-size:9px;padding:0 5px;letter-spacing:0}
+  .ue-header{padding:12px calc(12px + var(--ue-scrollbar-gutter,0px)) 12px 12px;gap:8px}.ue-header h1{font-size:16px}.ue-crown{width:24px;height:22px}.ue-brand{gap:6px}.ue-tools{gap:5px}.ue-tools .ue-subtle{max-width:52px;white-space:normal;font-size:9px;padding:0 5px;letter-spacing:0}
   .ue-main{--ue-card-width:88px;padding-left:12px;padding-right:12px}.ue-toolbar{gap:8px}.ue-tags{display:none}.ue-button.ue-rank-entry{font-size:13px}.ue-gallery-tier .ue-section-heading>small{display:none}.ue-back-gallery{max-width:93px;font-size:10px;padding:0 5px}
 }
 @media(max-width:760px){
   .ue-card-actions .ue-card-play{opacity:1;transition:none}
+  .ue-profile-editor-actions{bottom:-22px;margin-bottom:-22px}
   .ue-app{height:85dvh}.ue-dialog{width:calc(100vw - 16px);max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.ue-dialog.ue-wide{width:calc(100vw - 16px)}.ue-dialog-head{padding:17px 18px}.ue-dialog-body{padding:22px}
   .ue-detail-summary{grid-template-columns:95px minmax(0,1fr);gap:22px}.ue-detail-summary .ue-actions{gap:10px}.ue-detail-summary .ue-button{padding:0 10px;min-width:0;font-size:12px;letter-spacing:.08em}.ue-tabs{gap:6px}.ue-tabs .ue-button{padding:0 9px}
   .ue-save{align-items:flex-start;flex-direction:column;gap:14px}.ue-save-open{width:100%}.ue-save-actions{max-width:none;width:100%}.ue-rank-edit-row{grid-template-columns:minmax(0,1fr) 48px 38px 38px;gap:6px}.ue-rank-edit-row .ue-button{padding:0 3px;letter-spacing:0;font-size:11px}.ue-rank-edit-row .ue-input{padding:7px 6px;font-size:12px}.ue-replacement-row{gap:10px}.ue-replacement-row .ue-button{font-size:11px;padding:0 9px}

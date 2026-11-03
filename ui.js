@@ -31,7 +31,7 @@ function crown() {
 // Native document handlers close unpinned drawers on outside clicks/Escape.
 // Stop only our owned surfaces, after local handlers; don't block native menus.
 function isolateSurface(element) {
-    element.addEventListener('click', event => event.stopPropagation());
+    for (const type of ['pointerdown', 'mousedown', 'touchstart', 'click']) element.addEventListener(type, event => event.stopPropagation());
     element.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
 }
 
@@ -100,7 +100,7 @@ export class EmperorUI {
         }
         return all;
     }
-    companion(entity) { return !entity.firstPlayed && entity.historyUnavailable ? '相伴时间待补全' : !entity.firstPlayed && entity.historyPending && !entity.played ? '正在读取相伴…' : companionLabel(entity.firstPlayed, Date.now(), entity.played); }
+    companion(entity) { return companionLabel(entity.record.enteredAt || entity.firstPlayed, Date.now(), entity.played); }
     async redraw() { for (const shell of this.shells) await shell.draw(); }
     cover(entity, cls = '') {
         const image = node('img', `ue-cover ${cls}`); image.src = this.host.cover(entity.id); image.alt = entity.name; image.loading = 'lazy'; image.draggable = false;
@@ -147,7 +147,7 @@ export class EmperorUI {
         tools.append(this.button('＋', () => this.importDialog(), 'ue-icon', '入宫：导入或创建角色'), this.button('⚙', () => this.settings(), 'ue-icon', '设置与备份'));
         if (home) tools.append(this.button('原生首页', () => { this.state.homepage = false; this.save(); this.onHomePreference?.(); }, 'ue-subtle'));
         if (native) tools.append(this.button('原生面板', () => this.onNativeEntry?.(), 'ue-subtle'));
-        const layout = node('div', 'ue-layout'); const sidebar = node('nav', 'ue-sidebar'); sidebar.setAttribute('aria-label', '妃位快速跳转');
+        const layout = node('div', 'ue-layout'); const sidebar = node('nav', 'ue-sidebar'); sidebar.setAttribute('aria-label', '封位快速跳转');
         const main = node('div', 'ue-main'); const top = node('div', 'ue-toolbar'); const count = node('span', 'ue-muted');
         let viewRank = 'all', renderedRank = 'all'; const viewScrolls = new Map(), railPositions = new Map(); let carousels = [];
         const navigate = async rankId => {
@@ -157,13 +157,13 @@ export class EmperorUI {
         let rankDrawer;
         const categories = this.button('', () => {
             if (rankDrawer?.open) return;
-            const opened = this.dialog('妃位分类', { className: 'ue-rank-drawer' }); rankDrawer = opened.dialog;
+            const opened = this.dialog('封位分类', { className: 'ue-rank-drawer' }); rankDrawer = opened.dialog;
             categories.setAttribute('aria-expanded', 'true'); opened.body.append(filters);
             rankDrawer.addEventListener('close', () => { if (root.isConnected) layout.prepend(filters); categories.setAttribute('aria-expanded', 'false'); rankDrawer = null; }, { once: true });
-        }, 'ue-category-entry', '打开妃位分类'); categories.setAttribute('aria-expanded', 'false');
+        }, 'ue-category-entry', '打开封位分类'); categories.setAttribute('aria-expanded', 'false');
         categories.append(crown()); brand.append(categories, node('h1', '', 'U皇万岁')); header.append(brand, tools);
         const tag = select([['', '全部标签']], ''); tag.setAttribute('aria-label', '按标签筛选'); tag.classList.add('ue-tag-filter');
-        const filters = node('div', 'ue-drawer-filters'); filters.append(field('搜索角色或标签', search), field('按标签筛选', tag), node('h3', '', '妃位分类'), sidebar);
+        const filters = node('div', 'ue-drawer-filters'); filters.append(field('搜索角色或标签', search), field('按标签筛选', tag), node('h3', '', '封位分类'), sidebar);
         const refresh = this.button('↻', async () => { await this.host.refresh(); await draw(); }, 'ue-icon', '刷新角色与存档信息');
         const drawButton = this.button('翻牌', () => this.drawDialog(), 'ue-primary ue-draw-entry');
         const back = this.button('‹ 返回金字塔', () => navigate('all'), 'ue-subtle ue-back-gallery'); back.hidden = true;
@@ -229,7 +229,9 @@ export class EmperorUI {
         };
         const syncNav = () => sidebar.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String((b.dataset.rank || 'all') === this.activeRank)));
         search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 140); }); tag.addEventListener('change', draw);
-        const shell = { root, draw, dispose: () => { revision++; clearTimeout(timer); carousels.forEach(carousel => carousel.dispose()); rankDrawer?.close(); this.shells.delete(shell); } };
+        const alignTools = () => root.style.setProperty('--ue-scrollbar-gutter', `${main.offsetWidth - main.clientWidth}px`);
+        const geometry = new ResizeObserver(alignTools); geometry.observe(main);
+        const shell = { root, draw, dispose: () => { revision++; clearTimeout(timer); geometry.disconnect(); carousels.forEach(carousel => carousel.dispose()); rankDrawer?.close(); this.shells.delete(shell); } };
         this.shells.add(shell); draw(); return shell;
     }
     open() {
@@ -280,18 +282,18 @@ export class EmperorUI {
     }
     profileEditor(entity, afterSave) {
         const { dialog, body } = this.dialog('编辑人设', { wide: true, className: 'ue-profile-editor' });
-        const fields = [['description', '人设'], ['personality', '性格'], ['scenario', '场景'], ['mes_example', '示例对话'], ['creator_notes', '作者说明']];
-        const baseline = {}, controls = new Map();
-        for (const [key, label] of fields) {
-            const value = entity.raw.data?.[key] ?? (key === 'creator_notes' ? entity.raw.creatorcomment : entity.raw[key]) ?? '';
-            baseline[key] = String(value); const control = node('textarea', 'ue-input ue-profile-text'); control.value = baseline[key]; control.rows = key === 'description' ? 10 : 5;
-            controls.set(key, control); body.append(field(label, control));
-        }
-        const actions = node('div', 'ue-actions');
+        const baseline = { description: String(entity.raw.data?.description ?? entity.raw.description ?? '') };
+        const control = node('textarea', 'ue-input ue-profile-text'); control.value = baseline.description; control.rows = 10;
+        body.append(field('人设', control));
+        const status = node('p', 'ue-muted'); status.setAttribute('role', 'status');
+        const actions = node('div', 'ue-actions ue-profile-editor-actions');
         actions.append(this.button('保存人设', async () => {
-            const changes = Object.fromEntries([...controls].filter(([key, control]) => control.value !== baseline[key]).map(([key, control]) => [key, control.value]));
-            entity.raw = await this.host.updateProfile(entity.id, changes, baseline); dialog.close(); afterSave(); await this.redraw(); this.notify('已保存到原生角色卡。');
-        }, 'ue-primary'), this.button('取消', () => dialog.close())); body.append(actions);
+            const changes = control.value !== baseline.description ? { description: control.value } : {};
+            status.textContent = '正在保存到原生角色卡…'; status.className = 'ue-muted';
+            try { entity.raw = await this.host.updateProfile(entity.id, changes, baseline); }
+            catch (error) { status.textContent = error.message; status.className = 'ue-error'; throw error; }
+            dialog.close(); afterSave(); await this.redraw(); this.notify('已保存到原生角色卡。');
+        }, 'ue-primary'), this.button('取消', () => dialog.close())); body.append(status, actions);
     }
     sourceThread(entity) {
         const current = recordFor(this.state, entity.id);
@@ -379,7 +381,7 @@ export class EmperorUI {
         const demotionField = field(`原${queenName}的新封位`, demotion, `册封时同时完成交接，${queenName}始终最多一位。`);
         const sync = () => { demotionField.hidden = rank.value !== 'queen' || !incumbent; }; rank.addEventListener('change', sync); sync();
         const tags = input(entity.tags.join('、')); tags.readOnly = true;
-        body.append(node('p', '', entity.name), field('妃位', rank), demotionField, field('Discord 原帖（可不填）', source), field('现有标签', tags, '标签沿用酒馆原生设置，可在原生角色面板管理。'));
+        body.append(node('p', '', entity.name), field('封位', rank), demotionField, field('Discord 原帖（可不填）', source), field('现有标签', tags, '标签沿用酒馆原生设置，可在原生角色面板管理。'));
         body.append(this.button('完成登记', async () => { const url = discordUrl(source.value); assignRank(this.state, avatar, rank.value, demotion.value); record.sourceUrl = url; this.save(); dialog.close(); await this.redraw(); this.notify('入宫登记已保存。'); }, 'ue-primary'), this.button('稍后再说', () => dialog.close()));
     }
     importDialog() {
@@ -434,7 +436,7 @@ export class EmperorUI {
         const presentation = select([['blind', '盲翻'], ['named', '点名']], this.state.presentation);
         const tag = select([['', '全部标签']], ''); const description = node('p', 'ue-muted');
         controls.append(field('翻牌规则', mode), field('翻牌方式', presentation), field('候选标签', tag));
-        const rank = select([['', '全部非冷宫妃位'], ...this.state.ranks.filter(r => r.id !== 'cold').map(r => [r.id, r.name])], this.state.drawRank); controls.append(field('候选妃位', rank));
+        const rank = select([['', '全部非冷宫封位'], ...this.state.ranks.filter(r => r.id !== 'cold').map(r => [r.id, r.name])], this.state.drawRank); controls.append(field('候选封位', rank));
         const settings = this.button('⚙', () => {
             const opened = this.dialog('翻牌设置', { className: 'ue-draw-settings' });
             opened.body.append(controls, description, this.button('返回托盘', () => opened.dialog.close(), 'ue-primary'), this.button('重新摆牌', async () => { await deal(); opened.dialog.close(); }));
@@ -553,7 +555,7 @@ export class EmperorUI {
             catch (error) { preset.value = this.state.rankPreset; this.notify(error.message, true); }
         });
         preset.setAttribute('aria-label', '默认分类类型');
-        const classification = node('div', 'ue-classification-head'); classification.append(node('h3', '', '分类管理'), preset); body.append(classification);
+        const classification = node('div', 'ue-classification-head'); classification.append(node('h3', '', '封位管理'), preset); body.append(classification);
         const ranks = node('div', 'ue-rank-editor'); body.append(ranks);
         const drawRanks = () => {
             ranks.replaceChildren();
@@ -567,7 +569,7 @@ export class EmperorUI {
                 ranks.append(row);
             });
         }; drawRanks();
-        body.append(this.button('＋ 新增分类', () => { if (this.state.ranks.length >= 40) throw new Error('最多保留 40 个分类。'); this.state.ranks.splice(-1, 0, { id: createId('rank'), name: '新封位', weight: 1 }); this.save(); drawRanks(); this.redraw(); }), node('h3', '', '备份与恢复'), node('p', 'ue-muted', '管理备份只包含封位、登记、原帖、记录和存档别名／置顶。角色库快照另含角色 PNG、聊天 JSONL 和关联世界书，不包含账号设置或群聊。'));
+        body.append(this.button('＋ 新增分类', () => { if (this.state.ranks.length >= 40) throw new Error('最多保留 40 个分类。'); this.state.ranks.splice(this.state.ranks.findIndex(r => r.id === 'unranked'), 0, { id: createId('rank'), name: '新封位', weight: 1 }); this.save(); drawRanks(); this.redraw(); }), node('h3', '', '备份与恢复'), node('p', 'ue-muted', '管理备份只包含封位、登记、原帖、记录和存档别名／置顶。角色库快照另含角色 PNG、聊天 JSONL 和关联世界书，不包含账号设置或群聊。'));
         const actions = node('div', 'ue-actions');
         actions.append(this.button('导出管理备份', () => saveFile(`U皇万岁-管理备份-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(this.state), null, 2))), this.button('导出角色库快照 ZIP', () => this.backupDialog()));
         const restore = input('', 'file'); restore.accept = '.json';
@@ -578,12 +580,12 @@ export class EmperorUI {
                 if (file.size > 10 * 1024 * 1024) throw new Error('管理备份超过 10 MB，无法读取。');
                 const restored = readBackup(JSON.parse(await file.text()));
                 const confirm = this.dialog('确认恢复管理数据');
-                confirm.body.append(node('p', '', `备份含 ${restored.ranks.length} 个妃位、${Object.keys(restored.records).length} 条角色记录。将替换现有管理设置，不写入角色或聊天。`), this.button('下载当前备份并恢复', () => { saveFile('U皇万岁-恢复前管理备份.json', JSON.stringify(makeBackup(this.state), null, 2)); this.setState(restored); confirm.dialog.close(); dialog.close(); this.onHomePreference?.(); this.onPanelPreference?.(); this.notify('管理数据已恢复。'); }, 'ue-primary'));
+                confirm.body.append(node('p', '', `备份含 ${restored.ranks.length} 个封位、${Object.keys(restored.records).length} 条角色记录。将替换现有管理设置，不写入角色或聊天。`), this.button('下载当前备份并恢复', () => { saveFile('U皇万岁-恢复前管理备份.json', JSON.stringify(makeBackup(this.state), null, 2)); this.setState(restored); confirm.dialog.close(); dialog.close(); this.onHomePreference?.(); this.onPanelPreference?.(); this.notify('管理数据已恢复。'); }, 'ue-primary'));
             } catch (e) { this.notify(e.message, true); }
             restore.value = '';
         });
         body.append(actions, restore); restore.hidden = true;
-        body.append(node('h3', '', '翻牌说明'), node('p', 'ue-muted', '情有独钟按单卡妃位权重；喜新厌旧取其倒数。旧情复燃采用「log₂(1＋历史用户消息数)² × (1＋ln(1＋未玩天数))」，历史投入为主。全程不调用模型。'), node('p', 'ue-muted ue-small', `版本 ${VERSION} · 原生扩展 · 目标最低酒馆 1.15.0`));
+        body.append(node('h3', '', '翻牌说明'), node('p', 'ue-muted', '情有独钟按单卡封位权重；喜新厌旧取其倒数。旧情复燃采用「log₂(1＋历史用户消息数)² × (1＋ln(1＋未玩天数))」，历史投入为主。全程不调用模型。'), node('p', 'ue-muted ue-small', `版本 ${VERSION} · 原生扩展 · 目标最低酒馆 1.15.0`));
     }
     backupDialog() {
         const { dialog, body } = this.dialog('导出角色库快照'); const controller = new AbortController();
