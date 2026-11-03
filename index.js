@@ -2,17 +2,20 @@ import { KEY, normalize, entities, recordFor, logAction, renameIdentity, interac
 import { TavernHost } from './host.js';
 import { EmperorUI, node } from './ui.js';
 import { NativeCharacterPanel } from './native-panel.js';
-import { activity, arrival } from './chronicles.js';
+import { activity, arrival, messageIdentity } from './chronicles.js';
 
 let host, ui, disposers = [], home, welcome, observer, frame, ready = false;
 let enabled = false;
 let generation = 0;
 let nativePanel;
 let knownAvatars = new Set(), baselineMessages = new WeakSet();
+let inventoryReady = false;
 function primeMessages() { baselineMessages = new WeakSet((host.ctx.chat || []).filter(m => m && typeof m === 'object')); }
 function discoverArrivals() {
+    const characters = (host.ctx.characters || []).filter(c => c.avatar && c.avatar !== 'none');
+    if (!inventoryReady) { knownAvatars = new Set(characters.map(c => c.avatar)); inventoryReady = characters.length > 0; entities(host.ctx, ui.state); ui.save(); return; }
     for (const c of host.ctx.characters || []) if (c.avatar && c.avatar !== 'none' && !knownAvatars.has(c.avatar)) {
-        knownAvatars.add(c.avatar); recordFor(ui.state, c.avatar, Date.now()); if (ui.state.enabled) arrival(ui.state, c.avatar);
+        knownAvatars.add(c.avatar); const record = recordFor(ui.state, c.avatar, c.date_added); if (ui.state.enabled && (timestamp(c.date_added) || record.enteredAt)) arrival(ui.state, c.avatar, timestamp(c.date_added) || record.enteredAt);
     }
     ui.save();
 }
@@ -73,7 +76,7 @@ function trackPlay(index, type) {
     const avatar = ctx.characters?.[ctx.characterId]?.avatar;
     if (!avatar) return;
     const r = recordFor(ui.state, avatar);
-    const messageKey = JSON.stringify([avatar, ctx.getCurrentChatId(), Number(index), message.send_date || message.gen_started || 'undated']);
+    const messageKey = messageIdentity(avatar, ctx.getCurrentChatId(), Number(index), timestamp(message.send_date) || timestamp(message.gen_started), message.is_user);
     const newFloor = !baselineMessages.has(message) && !['swipe', 'continue', 'append', 'appendFinal'].includes(type);
     activity(ui.state, avatar, { key: messageKey, previous: r.lastPlayedAt, tokens: message.extra?.token_count, newFloor });
     baselineMessages.add(message);
@@ -97,7 +100,7 @@ export async function onEnable() {
     const restored = host.ctx.extensionSettings[KEY];
     if (restored.enabled && restored.chronicle.pausedAt) { restored.chronicle.gaps.push({ start: restored.chronicle.pausedAt, end: Date.now() }); restored.chronicle.pausedAt = 0; }
     entities(host.ctx, restored); host.save();
-    knownAvatars = new Set((host.ctx.characters || []).map(c => c.avatar)); primeMessages();
+    knownAvatars = new Set((host.ctx.characters || []).map(c => c.avatar)); inventoryReady = knownAvatars.size > 0; primeMessages();
     ui = new EmperorUI(host); ui.onHomePreference = scheduleHome; enabled = true;
     nativePanel = new NativeCharacterPanel(ui);
     ui.onNativeEntry = () => nativePanel.showNative();

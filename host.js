@@ -1,4 +1,5 @@
 import { chatRows, downloadUrl, stem, timestamp, interactionDates } from './core.js';
+import { readNativeHistory } from './native-history.js';
 
 /** Native adapter. Every version-sensitive dependency is pinned in docs/COMPATIBILITY.md. */
 export class TavernHost {
@@ -67,6 +68,12 @@ export class TavernHost {
         }
     }
     dispose() { this.disposed = true; }
+    async importHistory(state, progress, signal) {
+        if (this.nativeHistoryBook === state.chronicle) return this.nativeHistoryResult;
+        const result = await readNativeHistory(this, state, progress, signal);
+        if (!result.cancelled && !result.failed) { this.nativeHistoryBook = state.chronicle; this.nativeHistoryResult = result; }
+        return result;
+    }
     find(avatar) {
         const index = (this.ctx.characters || []).findIndex(c => c.avatar === avatar);
         if (index < 0) throw new Error('角色已不存在，请刷新列表。');
@@ -250,7 +257,7 @@ export class TavernHost {
     }
     async exportCard(avatar) { return this.request('/api/characters/export', { avatar_url: avatar, format: 'png' }, { blob: true }); }
     async readWorld(name) { const wi = await this.world(); const data = await wi.loadWorldInfo(name); if (!data) throw new Error(`世界书 ${name} 读取失败。`); return data; }
-    async refresh() { await this.ctx.getCharacters(); this.invalidate(); this.historyJobs = new Map(); this.historyValue.clear(); }
+    async refresh() { await this.ctx.getCharacters(); this.invalidate(); this.historyJobs = new Map(); this.historyValue.clear(); this.nativeHistoryBook = null; }
     off(event, fn) { const source = this.ctx.eventSource; if (source.removeListener) source.removeListener(event, fn); else source.off(event, fn); }
     on(name, fn) {
         const event = this.ctx.eventTypes[name];

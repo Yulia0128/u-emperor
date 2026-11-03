@@ -1,5 +1,9 @@
 # 酒馆接口来源与兼容目标
 
+0.7.3 恢复原生历史来源。再次核对官方 1.15.0 固定提交 [characters.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/characters.js) 的 processCharacter：date_added 来自文件 ctimeMs，不是插件加载日，也不是 first_chat。它仍可能受文件复制／替换影响，因此保留已经保存的更早入库日期；无法从丢失的原生字段还原精确首次导入。移除 enteredExact 对更早原生日期的锁定，不再用初见时间兜底入宫。角色列表初次异步加载单独建立基线。
+
+原生历史使用已核对的 `/api/characters/chats` 列表与 [chats.js](https://github.com/SillyTavern/SillyTavern/blob/1c0e7ea9556afcc3ae55c888287dff67a6aa42fc/src/endpoints/chats.js) `/get`，逐份读取消息 send_date／gen_started、is_user、is_system 和 extra.token_count，提取后不持久化正文。仅在打开史册后读取，单存档顺序处理、存档间让出事件循环，关闭取消后续读取。不是服务端聚合或跨设备实时合并。规范化的角色、消息位置、时间、角色类型用于重复／共同分支前文去重；旧键按文件名与原始时间转换。删除／编辑／缺少原始日期／时间冲突及特殊导入格式仍需真实环境验证，不宣称无条件还原所有历史。来源置信度 high，真实运行待验收。
+
 0.7.2 仅改变自有日历浮层：复用一个日历内绝对定位节点，通过透明度过渡切换；异步选择带序号取消，关闭时清理淡出等待和窗口 resize 监听。角色消息、统计与原生 API 依赖不变。DOM 状态播报与日期按钮 aria-describedby 关联，减少动态效果即时切换；移动端坐标按日历边界限制。未新增原生弹窗或全局点击监听。
 
 0.7.1 未新增统计接口；总Token继续合计已有的用户和角色消息 token_count。删除覆盖楼层说明，但保留缺失破折号与部分合计 ≥，不把旧值改称输出 Token。日期点击仅读取当天聚合数据，不下载聊天。语录使用 textContent 替换字段，分类名称中的 HTML 不执行。

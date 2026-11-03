@@ -31,17 +31,21 @@ export function cleanChronicle(raw) {
     return out;
 }
 export function arrival(state, id, at = Date.now()) {
-    const book = state.chronicle; if (!book || !safe(id) || book.arrivals[id]) return;
-    book.arrivals[id] = at;
-    if (state.records[id]) { state.records[id].enteredAt = at; state.records[id].enteredExact = true; }
+    const book = state.chronicle; if (!book || !safe(id) || !(at > 0)) return;
+    const record = state.records[id];
+    const candidates = [book.arrivals[id], record?.enteredAt, at].filter(value => value > 0 && value <= Date.now());
+    if (!candidates.length) return;
+    book.arrivals[id] = Math.min(...candidates);
+    if (record) { record.enteredAt = book.arrivals[id]; record.enteredExact = true; }
 }
+export const messageIdentity = (id, chat, index, stamp, user) => JSON.stringify([id, 'native-message', index, stamp || chat, user === true]);
 export function promotion(state, id, from, to, at = Date.now()) {
     const book = state.chronicle; if (!book || from === to) return;
     const ladder = state.ranks.filter(r => r.id !== 'cold');
     const a = ladder.findIndex(r => r.id === from), b = ladder.findIndex(r => r.id === to);
     if (a < 0 || b < 0 || a <= b) return;
     const record = state.records[id];
-    book.promotions.push({ id, from: ladder[a].name, to: ladder[b].name, levels: a - b, at, first: !book.promotions.some(r => r.id === id), elapsed: record?.enteredExact && record.enteredAt <= at ? at - record.enteredAt : null });
+    book.promotions.push({ id, from: ladder[a].name, to: ladder[b].name, levels: a - b, at, first: !book.promotions.some(r => r.id === id), elapsed: record?.enteredAt > 0 && record.enteredAt <= at ? at - record.enteredAt : null });
 }
 export function activity(state, id, { key, at = Date.now(), tokens = null, previous = 0, newFloor = true } = {}) {
     const book = state.chronicle; if (!book || !safe(id)) return;

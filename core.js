@@ -1,5 +1,5 @@
 import { newChronicle, cleanChronicle, promotion } from './chronicles.js';
-export const VERSION = '0.7.2';
+export const VERSION = '0.7.3';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -191,9 +191,15 @@ export function entities(ctx, state, stats = {}) {
         const stat = stats[c.avatar] || {};
         const firstCandidates = [number(stat.user_msg_count) > 0 ? timestamp(stat.date_first_chat) : 0, r.firstPlayedAt].filter(t => t > 0 && t <= Date.now());
         const firstPlayed = firstCandidates.length ? Math.min(...firstCandidates) : 0;
-        // File ctime can change on copy/replace. Never place entry after a known interaction.
-        const entryCandidates = (r.enteredExact ? [r.enteredAt] : [r.enteredAt, timestamp(c.date_added), firstPlayed]).filter(t => t > 0 && t <= Date.now());
+        // Never lock a mistaken "discovered today" value over an older native entry.
+        // Chat time describes companionship, not character import time.
+        const entryCandidates = [r.enteredAt, timestamp(c.date_added)].filter(t => t > 0 && t <= Date.now());
         if (entryCandidates.length) r.enteredAt = Math.min(...entryCandidates);
+        if (r.enteredAt > 0) {
+            state.chronicle.arrivals[c.avatar] = r.enteredAt;
+            state.chronicle.startedAt = Math.min(state.chronicle.startedAt, r.enteredAt);
+            for (const event of state.chronicle.promotions) if (event.id === c.avatar && event.at >= r.enteredAt) event.elapsed = event.at - r.enteredAt;
+        }
         const tags = [...new Set([...(ctx.tagMap?.[c.avatar] || []).map(id => tagNames.get(String(id))), ...(Array.isArray(c.data?.tags || c.tags) ? (c.data?.tags || c.tags) : [])].filter(t => typeof t === 'string' && t.trim()))];
         return {
             id: c.avatar, name: text(c.name || c.data?.name) || stem(c.avatar), raw: c, tags, record: r,

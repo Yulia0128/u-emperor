@@ -102,7 +102,7 @@ export class EmperorUI {
         }
         return all;
     }
-    companion(entity) { return companionLabel(entity.record.enteredAt || entity.firstPlayed, Date.now(), entity.played); }
+    companion(entity) { return companionLabel(entity.record.enteredAt, Date.now(), entity.played); }
     async redraw() { for (const shell of this.shells) await shell.draw(); }
     cover(entity, cls = '') {
         const image = node('img', `ue-cover ${cls}`); image.src = this.host.cover(entity.id); image.alt = entity.name; image.loading = 'lazy'; image.draggable = false;

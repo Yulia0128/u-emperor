@@ -49,6 +49,26 @@ export function openChronicle(ui, node) {
     const note = node('p', 'ue-muted ue-small');
     note.textContent = `自 ${dayKey(book.startedAt, book.zone)} 开始记载 · ${book.zone}`;
     body.append(head, note, content);
+    const importStatus = node('p', 'ue-muted ue-small ue-history-import'); importStatus.setAttribute('role', 'status');
+    if (ui.host.importHistory) {
+        body.insertBefore(importStatus, content); importStatus.textContent = '正在读取原生记录…';
+        const controller = new AbortController(); dialog.addEventListener('close', () => controller.abort(), { once: true });
+        let lastPaint = 0, lastSave = 0;
+        // Start after initial render; read sequentially without blocking the calendar.
+        Promise.resolve().then(() => ui.host.importHistory(ui.state, result => {
+            if (!dialog.open) return;
+            importStatus.textContent = `正在读取原生记录 · ${result.complete} / ${result.total}`;
+            const now = Date.now();
+            if (now - lastSave > 2000) { ui.save(); lastSave = now; }
+            if (now - lastPaint > 150) { render(); lastPaint = now; }
+        }, controller.signal)).then(result => {
+            ui.save(); if (!dialog.open) return;
+            importStatus.textContent = result.failed || result.undated ? '部分原生记录未能读取完整，当前显示已读取的数据。' : '';
+            importStatus.hidden = !importStatus.textContent;
+            note.textContent = `自 ${dayKey(book.startedAt, book.zone)} 开始记载 · ${book.zone}`;
+            render(); ui.redraw();
+        }).catch(error => { if (dialog.open) importStatus.textContent = `原生记录读取未完成：${error.message}`; });
+    }
     function shift(direction) {
         const p = periodFor(anchor, mode);
         anchor = direction > 0 ? p.end : moveDay(p.start, -1); render();
