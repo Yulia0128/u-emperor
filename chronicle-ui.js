@@ -99,11 +99,11 @@ export function openChronicle(ui, node) {
         const periodTitle = node('div', 'ue-history-period'); periodTitle.append(node('h3', '', `${p.start.replaceAll('-', '.')} — ${p.last.replaceAll('-', '.')}`), node('span', 'ue-badge', unavailable ? p.start > today ? '尚未开篇' : '尚未收录' : p.contains(today) ? '本期进行中' : '往期回顾')); report.append(periodTitle);
         if (!unavailable && (p.start < started || gaps)) report.append(node('p', 'ue-muted ue-small', '本期部分日期未记录，以下仅为已收录内容。'));
         const stats = node('div', 'ue-history-stats');
-        for (const [type, label, value, unit] of [['floors', '聊天总楼层', data.floors, '楼'], ['tokens', '总Token', data.tokens, 'tokens'], ['newcomers', '新入宫', data.newcomers.length, '位']]) {
+        for (const [type, label, value, unit] of [['floors', '聊天总楼层', data.floors, '楼'], ['tokens', '总Token', data.tokens, ''], ['newcomers', '新入宫', data.newcomers.length, '位']]) {
             const tile = node('article', 'ue-history-stat'); tile.append(node('span', 'ue-muted', label));
             const partial = type === 'tokens' && data.floors > data.tokenFloors;
             const missing = unavailable || (partial && !data.tokenFloors);
-            tile.append(node('strong', '', missing ? '—' : `${partial ? '≥ ' : ''}${value.toLocaleString()} ${unit}`));
+            tile.append(node('strong', '', missing ? '—' : `${partial ? '≥ ' : ''}${value.toLocaleString()}${unit ? ` ${unit}` : ''}`));
             if (unavailable || missing || (!value && !partial)) tile.append(node('p', 'ue-muted', unavailable ? '此段史册尚未收录。' : missing ? '尚无 Token 记录。' : quip(type)));
             stats.append(tile);
         }

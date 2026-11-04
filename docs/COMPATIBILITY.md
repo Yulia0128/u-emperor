@@ -1,5 +1,13 @@
 # 酒馆接口来源与兼容目标
 
+0.7.9 修正插件自有导航动画，不增加原生 API。淡出结束先保存透明度再释放 Web Animation，避免主内容 150ms 与抽屉 180ms 的等待间隙使旧分类恢复为不透明。替换内容期间保持隐藏，完成后淡入；中断读取当前透明度，最后一次导航负责恢复正常可见。离线回归逐帧采样皇后→贵妃，并延迟内容提交 90ms；使用 0.7.8 已交付源码复现旧分类闪回后，检查新版本隐藏状态的连续性。真实酒馆画面仍待用户验收。
+
+0.7.8 分类渲染不改原生数据或事件签名。本地导航仅使用 host.statsValue，原生事件／首次初始化仍刷新统计；同面板复用卡片和图片，元数据变化时重建。官方 [1.18.0 public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/public/script.js) 的 getThumbnailUrl(type,file,t=false) 默认给出稳定缩略图网址，t=true 才逐次添加当前时间。本插件在稳定网址上附加来自原生 date_added 的文件版本，避免切分类重复下载，同时在文件时间变化后刷新封面；该字段仅作封面缓存版本，不替代入宫或真实互动时间。核心资料整理预建封位／晋升索引，保留原有日期与统计规则。真实大库性能尚待用户运行验收。
+
+0.7.7 生命周期边界：核对官方 [1.18.0 public/scripts/extensions.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/public/scripts/extensions.js) 的 disableExtension、deleteExtension 和 callExtensionHook。停用调用 disable；卸载默认调用 delete，仅用户勾选清理时先调用 clean。本插件 delete 复用 onDisable，仅撤销自有 DOM、观察器、事件与计时器；clean 的 onClean 停止插件后只删除 `extensionSettings.u_emperor` 并保存设置，不向角色／聊天／世界书删除接口发送请求。[1.18.0 src/endpoints/extensions.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/src/endpoints/extensions.js) 的 `/delete` 只删除指定扩展目录。1.15.0 已核对的官方提交 `1c0e7ea9556afcc3ae55c888287dff67a6aa42fc` 没有这些扩展钩子，卸载后通过原生页面重载撤销界面，管理设置可能保留；不伪造旧版具有选择清理能力。来源置信度 high，真实卸载仍待运行验收。
+
+工具栏移出 `.ue-main`，原生／史册／翻牌共享 `.ue-shell-action`，不再测量滚动条修补右侧偏移。移除手动刷新只影响入口，原生事件刷新及首次读取仍保留。
+
 0.7.6 移除 entities.lastPlayed 中的原生 date_last_chat：官方 [1.18.0 stats.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/src/endpoints/stats.js) 重建会从 chatStat.mtimeMs 计算此值，故不能作为真实游玩凭据。实时沿用 MESSAGE_SENT／MESSAGE_RECEIVED，以设备 Date.now 记录有效事件；已有消息对象签名阻止重复通知刷新时间。首次自动开场和系统消息继续排除。没有引入 MESSAGE_SWIPED：仅切换已有回复不作为新的生成事件。
 
 历史来源补充 [1.18.0 public/script.js](https://github.com/SillyTavern/SillyTavern/blob/1.18.0/public/script.js) 中流式 message.gen_started／gen_finished，非流式 append／appendFinal／swipe／普通新回复路径的生成日期，以及同步 swipe_info 的 send_date／gen_started／gen_finished。interactionTimes 只读取这些原生时间字段，拒绝未来／无效值，编辑元数据和文件时间不参与。原始楼层身份仍使用原始消息日期，生成活动补充不重复增加楼层。旧情复燃在缺日期时调用已有 host.history 校验完整记录，确认不到则不参与此规则，不偷换成文件时间。新增单元与模拟事件检查，不等同于真实酒馆多种 API／生成模式验收。
@@ -34,7 +42,7 @@
 
 0.6.0 移除聊天正文预览，并停止首页和面板重绘时的整库 JSONL 下载。历史补读仅针对当前打开且缺少已记录初见时间的角色；存档页保留原生列表及消息数读取。未改变原生聊天消息或备份快照格式。首页展示默认关闭，显式保存的设置保留。
 
-0.5.0 的金字塔、横排滚动和分类完整页仅修改插件自有前端。分类页与画廊共享同一角色集合和筛选条件，当前分类、滚动位置不写入角色或聊天。carousel.js 的 DOM 监听、ResizeObserver、IntersectionObserver 与动画帧随所属界面销毁；观察器不可用时仍保留原生滚动与按钮。没有新增酒馆 API 依赖，没有调整 schema 1 管理数据与皇后／冷宫规则。测试证据仍为离线和模拟宿主，真实酒馆的原生拖动／主题叠加／手机触摸需在目标环境验收。
+0.5.0 的后宫、横排滚动和分类完整页仅修改插件自有前端。分类页与画廊共享同一角色集合和筛选条件，当前分类、滚动位置不写入角色或聊天。carousel.js 的 DOM 监听、ResizeObserver、IntersectionObserver 与动画帧随所属界面销毁；观察器不可用时仍保留原生滚动与按钮。没有新增酒馆 API 依赖，没有调整 schema 1 管理数据与皇后／冷宫规则。测试证据仍为离线和模拟宿主，真实酒馆的原生拖动／主题叠加／手机触摸需在目标环境验收。
 
 0.4.0 的事件隔离只处理了 click 与 Escape，没有覆盖 1.15.0 html touchstart／mousedown 处理器，旧版模拟也漏掉了这个时机；这项不足在 0.6.3 修正。插件弹窗在 body 的独立层，自有根节点与 dialog 承担事件隔离，保留浏览器关闭当前 dialog 的默认行为，不改写原生监听器或用户固定面板偏好。
 

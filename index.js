@@ -136,4 +136,12 @@ export function onDisable() {
     clearHome(); ui?.dispose(); ui = null; host?.dispose(); host = null;
     document.getElementById('ue-open')?.remove(); document.getElementById('ue-settings')?.remove();
 }
+// Native confirmed "clean extension data" hook. Never touches native files/settings.
+export async function onClean() {
+    onDisable();
+    const { getContext } = await import('/scripts/extensions.js');
+    const ctx = getContext();
+    delete ctx.extensionSettings[KEY];
+    ctx.saveSettingsDebounced();
+}
 onEnable().catch(error => console.error('U皇万岁：初始化失败。', error.message));

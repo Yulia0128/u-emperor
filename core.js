@@ -1,5 +1,5 @@
 import { newChronicle, cleanChronicle, promotion } from './chronicles.js';
-export const VERSION = '0.7.6';
+export const VERSION = '0.7.9';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -198,13 +198,19 @@ export function logAction(state, avatar, kind, at = Date.now(), chat = '') {
 }
 export function entities(ctx, state, stats = {}) {
     const tagNames = new Map((ctx.tags || []).map(t => [String(t.id), text(t.name)]));
+    const ranks = new Map(state.ranks.map(rank => [rank.id, rank]));
+    const promotions = new Map();
+    for (const event of state.chronicle.promotions) {
+        if (!promotions.has(event.id)) promotions.set(event.id, []);
+        promotions.get(event.id).push(event);
+    }
+    const now = Date.now(), valid = value => value > 0 && value <= now;
     return (ctx.characters || []).filter(c => c && safeKey(c.avatar) && c.avatar !== 'none').map(c => {
         const r = recordFor(state, c.avatar, c.date_added);
         const stat = stats[c.avatar] || {};
-        const firstCandidates = [number(stat.user_msg_count) > 0 ? timestamp(stat.date_first_chat) : 0, r.firstPlayedAt].filter(t => t > 0 && t <= Date.now());
+        const firstCandidates = [number(stat.user_msg_count) > 0 ? timestamp(stat.date_first_chat) : 0, r.firstPlayedAt].filter(valid);
         const firstPlayed = firstCandidates.length ? Math.min(...firstCandidates) : 0;
         // create_date is persisted by native import; date_added is mutable file ctime.
-        const valid = value => value > 0 && value <= Date.now();
         const created = timestamp(c.create_date), fileDate = timestamp(c.date_added);
         const nativeEntry = valid(created) ? created : valid(fileDate) ? fileDate : 0;
         const entryCandidates = [r.enteredAt, nativeEntry, r.enteredSource === 'import' ? 0 : r.entryEvidenceAt].filter(valid);
@@ -214,17 +220,17 @@ export function entities(ctx, state, stats = {}) {
         if (r.enteredAt > 0) {
             state.chronicle.arrivals[c.avatar] = r.enteredAt;
             state.chronicle.startedAt = Math.min(state.chronicle.startedAt, r.enteredAt);
-            for (const event of state.chronicle.promotions) if (event.id === c.avatar && event.at >= r.enteredAt) event.elapsed = event.at - r.enteredAt;
+            for (const event of promotions.get(c.avatar) || []) if (event.at >= r.enteredAt) event.elapsed = event.at - r.enteredAt;
         }
         const tags = [...new Set([...(ctx.tagMap?.[c.avatar] || []).map(id => tagNames.get(String(id))), ...(Array.isArray(c.data?.tags || c.tags) ? (c.data?.tags || c.tags) : [])].filter(t => typeof t === 'string' && t.trim()))];
         return {
             id: c.avatar, name: text(c.name || c.data?.name) || stem(c.avatar), raw: c, tags, record: r,
-            rank: state.ranks.find(rank => rank.id === r.rankId) || state.ranks.find(rank => rank.id === 'unranked'),
+            rank: ranks.get(r.rankId) || ranks.get('unranked'),
             // Native user-message history avoids scoring alternate swipes as additional investment.
             investment: Math.max(0, number(stat.user_msg_count)),
             played: number(stat.user_msg_count) > 0 || !!r.firstPlayedAt || !!r.lastPlayedAt,
             firstPlayed,
-            lastPlayed: r.lastPlayedAt > 0 && r.lastPlayedAt <= Date.now() ? r.lastPlayedAt : 0,
+            lastPlayed: valid(r.lastPlayedAt) ? r.lastPlayedAt : 0,
         };
     });
 }
