@@ -45,8 +45,11 @@
 .ue-card-grid{display:grid;grid-template-columns:repeat(auto-fill,var(--ue-card-width));justify-content:center;gap:var(--ue-card-gap);padding:12px 0}
 .ue-card{--ue-rank-gold:#777d86;--ue-rank-glow:.12;position:relative;isolation:isolate;width:var(--ue-card-width);flex:0 0 var(--ue-card-width);aspect-ratio:3/4;overflow:visible;border:1px solid var(--ue-rank-gold);border-radius:3px;background:#08090b;box-shadow:0 0 5px color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 65%),transparent);transition:opacity 320ms ease-in-out,box-shadow 700ms ease-in-out,border-color 700ms ease-in-out}
 .ue-card::before{content:"";position:absolute;inset:-12px;z-index:-1;pointer-events:none;border-radius:50%;background:radial-gradient(ellipse,color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 95%),transparent),transparent 72%);opacity:.65;transition:opacity 500ms ease-in-out}
-.ue-card::after{content:"";position:absolute;inset:43% 0 0;background:linear-gradient(to bottom,transparent,#08090b 77%);pointer-events:none;z-index:1}
-@media(hover:hover){.ue-card:hover{box-shadow:0 0 7px color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 90%),transparent)}.ue-card:hover::before{opacity:1}}
+.ue-card::after{content:"";position:absolute;inset:43% 0 0;border-radius:0 0 2px 2px;background:linear-gradient(to bottom,transparent,#08090b 77%);pointer-events:none;z-index:1}
+/* Draw the continuous rim above the cover, bottom fade and controls. */
+.ue-card-frame{position:absolute;inset:-1px;z-index:3;border:1px solid var(--ue-rank-gold);border-radius:inherit;pointer-events:none;background:none}
+@media(hover:hover){.ue-card:hover{box-shadow:0 0 10px color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 180%),transparent),0 0 24px color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 80%),transparent)}.ue-card:hover::before{opacity:1}}
+.ue-card:focus-within{box-shadow:0 0 10px color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 180%),transparent),0 0 24px color-mix(in srgb,var(--ue-rank-gold) calc(var(--ue-rank-glow) * 80%),transparent)}
 .ue-card:focus-within::before{opacity:1}
 .ue-card-open{display:block;position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;border:0;border-radius:2px;overflow:hidden;background:#25252a;letter-spacing:0}
 .ue-card-open::before,.ue-card-open::after,.ue-plaque::before{display:none}.ue-card-open:disabled{opacity:1}

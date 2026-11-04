@@ -148,7 +148,8 @@ export class EmperorUI {
         content.append(node('h3', '', entity.name), node('p', 'ue-card-meta', this.companion(entity)));
         const actions = node('div', 'ue-card-actions');
         actions.append(this.button('▷', () => this.continue(current()), 'ue-icon ue-primary ue-card-play', `继续 ${entity.name} 的上次聊天`));
-        card.append(open, content, actions); return card;
+        const frame = node('span', 'ue-card-frame'); frame.setAttribute('aria-hidden', 'true');
+        card.append(open, content, actions, frame); return card;
     }
     shell({ home = false, native = false } = {}) {
         const root = node('section', 'ue-app'); root.dataset.ueVersion = VERSION; root.setAttribute('aria-label', 'U皇万岁角色管理器');
