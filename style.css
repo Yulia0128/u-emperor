@@ -195,3 +195,33 @@
 /* Identical native / chronicle / draw controls, independent of label length. */
 .ue-app .ue-button.ue-shell-action{width:56px;min-width:56px;height:36px;min-height:36px;padding:0;flex-shrink:0;background:#151618;border:1px solid var(--ue-border);color:var(--ue-text);font-size:12px;letter-spacing:.12em;white-space:nowrap}
 .ue-app .ue-button.ue-shell-action:hover{border-color:var(--ue-gold);color:#efdfc0}
+
+/* Magic draw skin: the same five-candidate interaction in a two-row layout. */
+.ue-draw-dialog .ue-magic-stage{width:100%;max-width:min(100%,560px);aspect-ratio:1.15;margin:8px 0 0;background:radial-gradient(ellipse at center,#c9a96e0a,transparent 70%)}
+.ue-magic-stage::before{content:"";position:absolute;inset:0;background-image:var(--magic-circle);opacity:.5;filter:grayscale(1) sepia(1);background-position:center;background-size:contain;background-repeat:no-repeat;pointer-events:none;z-index:0}
+.ue-magic-stage .ue-tray-image,.ue-magic-stage .ue-tray-front-rim{display:none}
+.ue-magic-stage .ue-plaques{inset:10% 7%;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:16px 12px;align-items:center;justify-items:center}
+.ue-magic-stage .ue-plaque{grid-column:span 2;height:100%;width:auto;aspect-ratio:3/4;max-width:100%;min-width:0;border-radius:5px;filter:none}
+.ue-magic-stage .ue-plaque:nth-child(4){grid-column:2/span 2}
+.ue-magic-stage .ue-plaque:nth-child(5){grid-column:4/span 2}
+.ue-magic-stage .ue-plaque::after{display:none}
+.ue-magic-stage .ue-plaque-inner{transform:rotateY(0deg);transition:transform 750ms cubic-bezier(.4,0,.16,1)}
+.ue-magic-stage .ue-plaque-inner.ue-is-flipped{transform:rotateY(180deg)}
+.ue-magic-stage .ue-plaque-face,.ue-magic-stage .ue-plaque-frame,.ue-magic-stage .ue-plaque-edge{display:none}
+.ue-magic-stage .ue-plaque-front,.ue-magic-stage .ue-plaque-back{overflow:hidden;border:1px solid #89764f;border-radius:5px;background:#14171e;box-shadow:0 3px 14px #0005}
+.ue-magic-stage .ue-plaque-front{background:linear-gradient(145deg,#1b2029,#101319)}
+.ue-magic-stage .ue-plaque-front::before{content:"";position:absolute;inset:8px;border:1px solid #c9a96e30;border-radius:2px}
+.ue-magic-stage .ue-plaque-front::after{content:"✧";position:absolute;inset:0;display:grid;place-items:center;color:#c9a96e99;font:30px Georgia,serif;background:radial-gradient(circle at center,transparent 18%,#c9a96e20 19%,transparent 20%)}
+.ue-magic-stage .ue-plaque-name{writing-mode:horizontal-tb;top:auto;bottom:9px;left:50%;width:90%;text-align:center;font-size:12px;max-height:none}
+.ue-magic-stage .ue-plaque-portrait{inset:0;width:100%;height:100%;border-radius:4px;object-fit:cover;object-position:center 24%;opacity:1}
+.ue-magic-stage .ue-plaque-back::after{content:"";position:absolute;inset:55% 0 0;z-index:2;background:linear-gradient(transparent,#080b10a6);pointer-events:none}
+.ue-magic-stage .ue-plaque-back::before{content:attr(data-rarity);position:absolute;z-index:3;top:6px;left:8px;font:italic 15px Georgia,serif;color:#ffe5a1;text-shadow:0 1px 5px #000}
+.ue-magic-stage .ue-plaque:has(.ue-is-flipped){z-index:4}
+.ue-magic-stage .ue-plaque:has(.ue-is-flipped)::before{content:"";display:block;position:absolute;inset:-18px;z-index:-1;pointer-events:none;border-radius:40%;background:radial-gradient(ellipse,#e7bf6266,transparent 70%);animation:ue-magic-reveal 900ms ease-out both}
+.ue-magic-stage .ue-plaque:has(.ue-is-flipped) .ue-plaque-back{border-color:#f3d388;box-shadow:0 0 8px #e7bf62b0,0 0 23px #e7bf6250}
+@keyframes ue-magic-reveal{from{opacity:0}40%{opacity:1}to{opacity:.8}}
+@media(max-width:480px){.ue-magic-stage .ue-plaques{gap:12px 8px}.ue-draw-dialog .ue-magic-stage{max-width:100%}}
+@media(prefers-reduced-motion:reduce){.ue-magic-stage *{animation:none!important;transition:none!important}}
+
+.ue-magic-stage .ue-plaque-front{background:var(--magic-back) center/100% 100% no-repeat}
+.ue-magic-stage .ue-plaque-front::before,.ue-magic-stage .ue-plaque-front::after{display:none}

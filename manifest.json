@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "U皇万岁",
-  "version": "0.7.10",
+  "version": "0.8.0",
   "minimum_client_version": "1.15.0",
   "auto_update": false,
   "hooks": { "enable": "onEnable", "disable": "onDisable", "delete": "onDisable", "clean": "onClean" }

@@ -1,5 +1,5 @@
 import { newChronicle, cleanChronicle, promotion } from './chronicles.js';
-export const VERSION = '0.7.10';
+export const VERSION = '0.8.0';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([
@@ -31,6 +31,11 @@ export const RANK_PRESETS = Object.freeze({
     history: { queen: '皇后', noble: '贵妃', consort: '妃', concubine: '嫔', lady: '贵人' },
     empress: { queen: '帝后', noble: '贵君', consort: '文君', concubine: '侧君', lady: '侍君' },
 });
+export function rankLabel(state, rank) {
+    const aliases = { queen: 'UR', noble: 'SSR', consort: 'SR', concubine: 'R', lady: 'N' };
+    const stock = Object.values(RANK_PRESETS).some(preset => preset[rank.id] === rank.name);
+    return state.skin === 'magic' && stock ? aliases[rank.id] || rank.name : rank.name;
+}
 export function applyRankPreset(state, type) {
     if (!Object.hasOwn(RANK_PRESETS, type)) throw new Error('未知的默认分类类型。');
     for (const rank of state.ranks) {
@@ -49,7 +54,7 @@ export function defaults() {
             { id: 'lady', name: '贵人', weight: 1 },
             { id: 'unranked', name: '未册封', weight: 0.5 },
             { id: 'cold', name: '冷宫', weight: 0 },
-        ], records: {}, archives: {}, chronicle: newChronicle(), mode: 'random', presentation: 'blind', drawTag: '', drawRank: '',
+        ], records: {}, archives: {}, chronicle: newChronicle(), mode: 'random', skin: 'palace', drawTag: '', drawRank: '',
     };
 }
 export function discordUrl(value) {
@@ -132,7 +137,7 @@ export function normalize(input, { strict = false } = {}) {
     base.replaceCharacters = input.replaceCharacters !== false;
     base.rankPreset = input.rankPreset === 'empress' ? 'empress' : 'history';
     base.mode = MODES.some(([id]) => id === input.mode) ? input.mode : 'random';
-    base.presentation = input.presentation === 'named' ? 'named' : 'blind';
+    base.skin = input.skin === 'magic' ? 'magic' : 'palace';
     base.drawTag = text(input.drawTag).slice(0, 100);
     const drawRank = retired.get(input.drawRank) || input.drawRank;
     base.drawRank = valid.has(drawRank) && drawRank !== 'cold' ? drawRank : '';
@@ -225,7 +230,7 @@ export function entities(ctx, state, stats = {}) {
         const tags = [...new Set([...(ctx.tagMap?.[c.avatar] || []).map(id => tagNames.get(String(id))), ...(Array.isArray(c.data?.tags || c.tags) ? (c.data?.tags || c.tags) : [])].filter(t => typeof t === 'string' && t.trim()))];
         return {
             id: c.avatar, name: text(c.name || c.data?.name) || stem(c.avatar), raw: c, tags, record: r,
-            rank: ranks.get(r.rankId) || ranks.get('unranked'),
+            rank: (() => { const rank = ranks.get(r.rankId) || ranks.get('unranked'); return { ...rank, name: rankLabel(state, rank) }; })(),
             // Native user-message history avoids scoring alternate swipes as additional investment.
             investment: Math.max(0, number(stat.user_msg_count)),
             played: number(stat.user_msg_count) > 0 || !!r.firstPlayedAt || !!r.lastPlayedAt,

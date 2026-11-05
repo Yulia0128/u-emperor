@@ -1,4 +1,4 @@
-import { KEY, VERSION, MODES, entities, excerpt, recordFor, assignRank, removeRank, archiveKey, logAction, weightedPick, drawWeight, discordUrl, downloadUrl, dateLabel, companionLabel, makeBackup, readBackup, normalize, applyRankPreset } from './core.js';
+import { KEY, VERSION, MODES, entities, excerpt, recordFor, assignRank, removeRank, archiveKey, logAction, weightedPick, drawWeight, discordUrl, downloadUrl, dateLabel, companionLabel, makeBackup, readBackup, normalize, applyRankPreset, rankLabel } from './core.js';
 import { saveFile, fullBackup } from './backup.js';
 import { createId } from './ids.js';
 import { bindCarousel } from './carousel.js';
@@ -168,7 +168,7 @@ export class EmperorUI {
         const cards = new Map();
         const renderCard = entity => {
             const url = this.coverUrl(entity);
-            const signature = JSON.stringify([entity.name, entity.rank.id, this.state.ranks.indexOf(entity.rank), this.companion(entity), url]);
+            const signature = JSON.stringify([entity.name, entity.rank.id, this.state.ranks.findIndex(rank => rank.id === entity.rank.id), this.companion(entity), url]);
             let cached = cards.get(entity.id);
             if (!cached || cached.signature !== signature) {
                 cached = { entity, signature };
@@ -238,7 +238,7 @@ export class EmperorUI {
             viewScrolls.set(renderedRank, main.scrollTop);
             groups.querySelectorAll('.ue-carousel').forEach(rail => railPositions.set(rail.dataset.rank, rail.querySelector('.ue-carousel-viewport').scrollLeft));
             carousels.forEach(carousel => carousel.dispose()); carousels = [];
-            root.dataset.view = viewRank === 'all' ? 'gallery' : 'category'; root.dataset.rank = viewRank;
+            root.dataset.skin = this.state.skin; root.dataset.view = viewRank === 'all' ? 'gallery' : 'category'; root.dataset.rank = viewRank;
             back.hidden = viewRank === 'all'; this.activeRank = viewRank;
             const current = viewRank === 'all' ? filtered : filtered.filter(entity => entity.rank.id === viewRank);
             count.textContent = `${current.length} / ${all.length} 位角色`;
@@ -252,13 +252,13 @@ export class EmperorUI {
                 const members = byRank.get(rank.id).sort((a, b) => b.lastPlayed - a.lastPlayed || names.compare(a.name, b.name));
                 if ((query || selectedTag) && !members.length && viewRank !== rank.id) continue;
                 const nav = this.button('', () => navigate(rank.id), 'ue-nav-item'); nav.dataset.rank = rank.id;
-                nav.append(node('span', '', rank.name), node('span', 'ue-count', String(members.length))); sidebar.append(nav);
+                nav.append(node('span', '', rankLabel(this.state, rank)), node('span', 'ue-count', String(members.length))); sidebar.append(nav);
                 if (viewRank !== 'all' && viewRank !== rank.id) continue;
                 const section = node('section', `ue-rank-section ${viewRank === 'all' ? 'ue-gallery-tier' : 'ue-category-view'} ${rank.id === 'cold' ? 'ue-cold' : ''}`);
                 section.dataset.rank = rank.id; this.rankStyle(section, rank.id);
                 const heading = node('div', 'ue-section-heading'); const title = node('h2');
-                if (viewRank === 'all') { const entry = this.button(rank.name, () => navigate(rank.id), 'ue-rank-entry', `查看${rank.name}全部角色`); entry.removeAttribute('title'); title.append(entry); }
-                else { title.textContent = rank.name; title.className = 'ue-category-title'; title.tabIndex = -1; }
+                if (viewRank === 'all') { const entry = this.button(rankLabel(this.state, rank), () => navigate(rank.id), 'ue-rank-entry', `查看${rankLabel(this.state, rank)}全部角色`); entry.removeAttribute('title'); title.append(entry); }
+                else { title.textContent = rankLabel(this.state, rank); title.className = 'ue-category-title'; title.tabIndex = -1; }
                 heading.append(title, node('span', 'ue-count', String(members.length)));
                 if (rank.id === 'cold') heading.append(node('small', 'ue-muted', '不参与随机翻牌'));
                 section.append(heading);
@@ -266,10 +266,10 @@ export class EmperorUI {
                 let grid, carousel;
                 if (viewRank === 'all' && members.length) {
                     const rail = node('div', 'ue-carousel'); rail.dataset.rank = rank.id; rail.style.setProperty('--ue-slots', String(position === 0 ? 1 : position * 2));
-                    const viewport = node('div', 'ue-carousel-viewport'); viewport.tabIndex = 0; viewport.setAttribute('role', 'region'); viewport.setAttribute('aria-label', `${rank.name}角色横向列表`);
+                    const viewport = node('div', 'ue-carousel-viewport'); viewport.tabIndex = 0; viewport.setAttribute('role', 'region'); viewport.setAttribute('aria-label', `${rankLabel(this.state, rank)}角色横向列表`);
                     grid = node('div', 'ue-carousel-track'); viewport.append(grid);
-                    const left = node('button', 'ue-button ue-carousel-arrow', '‹'); left.type = 'button'; left.dataset.direction = 'previous'; left.setAttribute('aria-label', `向左浏览${rank.name}`);
-                    const right = node('button', 'ue-button ue-carousel-arrow', '›'); right.type = 'button'; right.dataset.direction = 'next'; right.setAttribute('aria-label', `向右浏览${rank.name}`); left.hidden = right.hidden = true;
+                    const left = node('button', 'ue-button ue-carousel-arrow', '‹'); left.type = 'button'; left.dataset.direction = 'previous'; left.setAttribute('aria-label', `向左浏览${rankLabel(this.state, rank)}`);
+                    const right = node('button', 'ue-button ue-carousel-arrow', '›'); right.type = 'button'; right.dataset.direction = 'next'; right.setAttribute('aria-label', `向右浏览${rankLabel(this.state, rank)}`); left.hidden = right.hidden = true;
                     rail.append(viewport, left, right); section.append(rail);
                     visible.forEach(entity => grid.append(renderCard(entity)));
                     carousel = bindCarousel(rail, railPositions.get(rank.id) || 0); carousels.push(carousel);
@@ -439,11 +439,11 @@ export class EmperorUI {
     async registration(avatar) {
         const entity = (await this.all()).find(e => e.id === avatar); if (!entity) throw new Error('角色已不存在。');
         const record = entity.record; const { dialog, body } = this.dialog('入宫登记');
-        const rank = select(this.state.ranks.map(r => [r.id, r.name]), record.rankId);
+        const rank = select(this.state.ranks.map(r => [r.id, rankLabel(this.state, r)]), record.rankId);
         const source = input(record.sourceUrl, 'url'); source.placeholder = 'https://discord.com/channels/…';
-        const demotion = select(this.state.ranks.filter(r => r.id !== 'queen').map(r => [r.id, r.name]), 'noble');
+        const demotion = select(this.state.ranks.filter(r => r.id !== 'queen').map(r => [r.id, rankLabel(this.state, r)]), 'noble');
         const incumbent = Object.entries(this.state.records).find(([id, r]) => id !== avatar && r.rankId === 'queen');
-        const queenName = this.state.ranks.find(r => r.id === 'queen').name;
+        const queenName = rankLabel(this.state, this.state.ranks.find(r => r.id === 'queen'));
         const demotionField = field(`原${queenName}的新封位`, demotion, `册封时同时完成交接，${queenName}始终最多一位。`);
         const sync = () => { demotionField.hidden = rank.value !== 'queen' || !incumbent; }; rank.addEventListener('change', sync); sync();
         const tags = input(entity.tags.join('、')); tags.readOnly = true;
@@ -499,15 +499,17 @@ export class EmperorUI {
         const { dialog, body } = this.dialog('今夜翻谁', { wide: true, className: 'ue-draw-dialog' });
         const controls = node('div', 'ue-draw-controls');
         const mode = select(MODES.map(([id, label]) => [id, label]), this.state.mode);
-        const presentation = select([['blind', '盲翻'], ['named', '点名']], this.state.presentation);
+        const skin = select([['palace', '宫廷翻牌'], ['magic', '魔法阵抽卡']], this.state.skin);
         const tag = select([['', '全部标签']], ''); const description = node('p', 'ue-muted');
-        controls.append(field('翻牌规则', mode), field('翻牌方式', presentation), field('候选标签', tag));
-        const rank = select([['', '全部非冷宫封位'], ...this.state.ranks.filter(r => r.id !== 'cold').map(r => [r.id, r.name])], this.state.drawRank); controls.append(field('候选封位', rank));
+        controls.append(field('翻牌规则', mode), field('皮肤', skin), field('候选标签', tag));
+        const rank = select([['', '全部非冷宫封位'], ...this.state.ranks.filter(r => r.id !== 'cold').map(r => [r.id, rankLabel(this.state, r)])], this.state.drawRank); controls.append(field('候选封位', rank));
         const settings = this.button('⚙', () => {
             const opened = this.dialog('翻牌设置', { className: 'ue-draw-settings' });
             opened.body.append(controls, description, this.button('返回托盘', () => opened.dialog.close(), 'ue-primary'), this.button('重新摆牌', async () => { await deal(); opened.dialog.close(); }));
         }, 'ue-icon', '翻牌设置'); dialog.querySelector('.ue-dialog-head').insertBefore(settings, dialog.querySelector('.ue-dialog-head .ue-icon'));
-        const stage = node('div', 'ue-plaque-stage'); stage.setAttribute('aria-label', '胡桃木翻牌托盘');
+        const stage = node('div', 'ue-plaque-stage');
+        stage.style.setProperty('--magic-circle', `url("${asset('magic-circle.png')}")`);
+        stage.style.setProperty('--magic-back', `url("${asset('magic-card-back.png')}")`); stage.setAttribute('aria-label', '胡桃木翻牌托盘');
         const tray = node('img', 'ue-tray-image'); tray.src = trayImage; tray.alt = '深胡桃木托盘'; tray.draggable = false; tray.loading = 'eager';
         const rim = node('img', 'ue-tray-front-rim'); rim.src = trayImage; rim.alt = ''; rim.draggable = false; rim.setAttribute('aria-hidden', 'true');
         const plaques = node('div', 'ue-plaques'); stage.append(tray, plaques, rim); const result = node('div', 'ue-draw-result');
@@ -532,6 +534,8 @@ export class EmperorUI {
         const filtered = () => all.filter(e => e.rank.id !== 'cold' && (!tag.value || e.tags.includes(tag.value)) && (!rank.value || e.rank.id === rank.value) && drawWeight(e, mode.value) > 0);
         const deal = async () => {
             const id = ++revision;
+            stage.classList.toggle('ue-magic-stage', this.state.skin === 'magic');
+            stage.setAttribute('aria-label', this.state.skin === 'magic' ? '魔法阵抽卡区域' : '胡桃木翻牌托盘');
             if (plaques.childElementCount && !reducedMotion()) {
                 plaques.querySelectorAll('button').forEach(button => { button.disabled = true; });
                 await Promise.all([fadeOut(plaques, 220), ...(!outcome.hidden ? [fadeOut(outcome, 220)] : [])]);
@@ -565,18 +569,10 @@ export class EmperorUI {
                 if (tag.selectedIndex < 0) tag.value = '';
                 pool = filtered();
                 description.textContent = `${MODES.find(([id]) => id === mode.value)[2]} 当前 ${pool.length} 位候选，始终排除冷宫。`;
-                this.state.mode = mode.value; this.state.presentation = presentation.value; this.state.drawTag = tag.value; this.state.drawRank = rank.value; this.save();
+                this.state.mode = mode.value; this.state.drawTag = tag.value; this.state.drawRank = rank.value; this.save();
                 if (!pool.length) { status.textContent = mode.value === 'rekindle' ? '当前范围没有确认玩过的角色，请打开翻牌设置更换规则或筛选。' : '当前范围没有可翻的角色，请打开翻牌设置调整筛选。'; status.hidden = false; stage.hidden = true; return; }
                 stage.hidden = false; next.textContent = '重新摆牌';
-                if (presentation.value === 'blind') {
-                    for (let i = 0; i < 5; i++) plaques.append(this.plaque(null, `翻开第 ${i + 1} 枚牌`, button => reveal(weightedPick(pool, mode.value), button)));
-                } else {
-                    const remaining = [...pool]; const dealt = [];
-                    while (remaining.length && dealt.length < 5) { const e = weightedPick(remaining, mode.value); if (!e) break; dealt.push(e); remaining.splice(remaining.findIndex(x => x.id === e.id), 1); }
-                    dealt.forEach(e => plaques.append(this.plaque(e, `点名 ${e.name}`, button => reveal(e, button))));
-                    for (let i = dealt.length; i < 5; i++) { const empty = this.plaque(null, '当前没有更多点名候选', () => {}); empty.disabled = true; empty.dataset.empty = 'true'; plaques.append(empty); }
-                    description.append(node('span', '', ' 点名时按此规则摆出候选，由你亲自选择。'));
-                }
+                for (let i = 0; i < 5; i++) plaques.append(this.plaque(null, `翻开第 ${i + 1} 枚牌`, button => reveal(weightedPick(pool, mode.value), button)));
                 plaques.dataset.phase = 'entering';
             } catch (e) { if (dialog.open && id === revision) { description.textContent = e.message; status.textContent = e.message; status.hidden = false; stage.hidden = true; outcome.hidden = false; next.hidden = false; next.textContent = '重新准备'; } }
         };
@@ -587,7 +583,7 @@ export class EmperorUI {
             button.dataset.revealed = 'true';
             const portrait = this.cover(entity, 'ue-plaque-portrait'); portrait.loading = 'eager';
             const frame = node('img', 'ue-plaque-frame'); frame.src = portraitFrame; frame.alt = '';
-            const back = button.querySelector('.ue-plaque-back'); back.append(portrait, frame);
+            const back = button.querySelector('.ue-plaque-back'); back.dataset.rarity = entity.rank.name; back.append(portrait, frame);
             // Prepare the real reverse before rotating, so the back never flashes an empty image.
             if (portrait.decode) await portrait.decode().catch(() => {});
             if (!dialog.open || id !== revision || !button.isConnected) return;
@@ -610,7 +606,13 @@ export class EmperorUI {
             result.replaceChildren(node('span', 'ue-badge', entity.rank.name), node('h3', '', entity.name), node('p', 'ue-muted', this.companion(entity)));
             const actions = node('div', 'ue-actions'); actions.append(this.button('▷ 继续上次', () => this.continue(entity), 'ue-primary'), this.button('选择存档', async () => { await this.detail(entity.id); const d = [...this.dialogs].at(-1); [...d.querySelectorAll('.ue-tabs button')].find(b => b.textContent === '存档')?.click(); }), this.button('开启新故事', () => this.fresh(entity)), this.button('查看档案', () => this.detail(entity.id))); result.append(actions);
         };
-        for (const control of [mode, presentation, tag, rank]) control.addEventListener('change', deal);
+        for (const control of [mode, tag, rank]) control.addEventListener('change', deal);
+        skin.addEventListener('change', async () => {
+            this.state.skin = skin.value; this.save(); await this.redraw();
+            const selected = rank.value;
+            rank.replaceChildren(...[['', '全部非冷宫封位'], ...this.state.ranks.filter(r => r.id !== 'cold').map(r => [r.id, rankLabel(this.state, r)])].map(([id, label]) => { const o = node('option', '', label); o.value = id; return o; }));
+            rank.value = selected; await deal();
+        });
         dialog.addEventListener('close', () => { revision++; }, { once: true }); await deal();
     }
     plaque(entity, label, action) {
