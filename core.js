@@ -1,5 +1,5 @@
 import { newChronicle, cleanChronicle, promotion } from './chronicles.js';
-export const VERSION = '0.8.0';
+export const VERSION = '0.8.1';
 export const KEY = 'u_emperor';
 export const DAY = 86400000;
 export const MODES = Object.freeze([

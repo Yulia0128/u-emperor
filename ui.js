@@ -509,7 +509,7 @@ export class EmperorUI {
         }, 'ue-icon', '翻牌设置'); dialog.querySelector('.ue-dialog-head').insertBefore(settings, dialog.querySelector('.ue-dialog-head .ue-icon'));
         const stage = node('div', 'ue-plaque-stage');
         stage.style.setProperty('--magic-circle', `url("${asset('magic-circle.png')}")`);
-        stage.style.setProperty('--magic-back', `url("${asset('magic-card-back.png')}")`); stage.setAttribute('aria-label', '胡桃木翻牌托盘');
+        stage.setAttribute('aria-label', '胡桃木翻牌托盘');
         const tray = node('img', 'ue-tray-image'); tray.src = trayImage; tray.alt = '深胡桃木托盘'; tray.draggable = false; tray.loading = 'eager';
         const rim = node('img', 'ue-tray-front-rim'); rim.src = trayImage; rim.alt = ''; rim.draggable = false; rim.setAttribute('aria-hidden', 'true');
         const plaques = node('div', 'ue-plaques'); stage.append(tray, plaques, rim); const result = node('div', 'ue-draw-result');
@@ -620,7 +620,11 @@ export class EmperorUI {
         button = this.button('', () => action(button), 'ue-plaque', label);
         const inner = node('span', 'ue-plaque-inner');
         const front = node('span', 'ue-plaque-front'); const back = node('span', 'ue-plaque-back'); const edge = node('span', 'ue-plaque-edge'); edge.setAttribute('aria-hidden', 'true');
-        const image = node('img', 'ue-plaque-face'); image.src = nameFace; image.alt = ''; front.append(image);
+        const image = node('img', 'ue-plaque-face');
+        const magic = this.state.skin === 'magic'; image.src = magic ? asset('magic-card-back.png') : nameFace;
+        image.alt = ''; image.decoding = 'async'; image.loading = 'eager'; image.draggable = false;
+        if (magic) image.addEventListener('error', () => { image.hidden = true; }, { once: true });
+        front.append(image);
         if (entity) front.append(node('span', 'ue-plaque-name', entity.name));
         inner.append(front, back, edge); button.append(inner);
         return button;
